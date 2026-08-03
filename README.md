@@ -27,6 +27,41 @@ Current checks include:
 site-health example.com
 ```
 
+## Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/atillalab/site-health.git
+```
+
+Create a symlink in a directory included in your `PATH`:
+
+```bash
+mkdir -p ~/.local/bin
+ln -s "$(pwd)/site-health/bin/site-health" ~/.local/bin/site-health
+```
+
+Add `~/.local/bin` to your `PATH` if necessary:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Verify the installation:
+
+```bash
+site-health example.com
+```
+
+To update the tool later:
+
+```bash
+cd site-health
+git pull
+```
+
 ## Roadmap
 
 - Rewrite as a standalone Go CLI
