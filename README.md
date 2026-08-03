@@ -1,20 +1,41 @@
-# README
+# site-health
 
 A fast CLI for checking website and domain health.
 
-> **Status:** 🚧 This project is under active development.
+> **Status:** 🚧 Early development (Bash prototype)
 
-## Planned Features
+## Features
 
-* Website availability checks
-* HTTP/HTTPS diagnostics
-* SSL certificate validation
-* DNS resolution checks
-* Domain expiration lookup
-* Health reports (CLI, JSON, CSV)
+Current checks include:
+
+- Domain registration expiry
+- DNS resolution (A, AAAA, CNAME)
+- TCP connectivity (80/443)
+- HTTP/HTTPS availability
+- Redirect and canonical URL validation
+- SSL certificate validation
+- Response time measurement
+- HTML content validation
+- Common server/PHP/WordPress error detection
+- Parked domain detection
+- MX record lookup
+- `llms.txt` availability check
+
+## Usage
+
+```bash
+site-health example.com
+```
+
+## Roadmap
+
+- Rewrite as a standalone Go CLI
+- JSON output
+- CSV output
+- Parallel scanning
+- Configuration file support
+- HTML reports
 
 ## License
 
 MIT
-
-This keeps the repository clean while giving visitors a clear idea of the project's purpose.

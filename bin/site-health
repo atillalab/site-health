@@ -1,0 +1,691 @@
+#!/usr/bin/env bash
+# File: bin/site-health
+# Version: 0.2
+# Last updated: 2026-08-03
+
+VERSION="0.2"
+
+show_usage() {
+  echo "Usage: site-health <domain>"
+  echo "Example: site-health example.com"
+}
+
+if [[ $# -ne 1 ]]; then
+  show_usage
+  exit 2
+fi
+
+DOMAIN="$1"
+
+DOMAIN="${DOMAIN#http://}"
+DOMAIN="${DOMAIN#https://}"
+DOMAIN="${DOMAIN%%/*}"
+DOMAIN="${DOMAIN%.}"
+
+if [[ -z "$DOMAIN" ]]; then
+  echo "Error: Invalid domain." >&2
+  exit 2
+fi
+
+EXPECTED_URL="https://${DOMAIN}/"
+
+CONNECT_TIMEOUT_SECONDS=5
+REQUEST_TIMEOUT_SECONDS=15
+MAX_REDIRECTS=10
+
+SSL_EXPIRY_WARNING_DAYS=30
+SSL_EXPIRY_WARNING_SECONDS=$((SSL_EXPIRY_WARNING_DAYS * 24 * 60 * 60))
+
+DOMAIN_EXPIRY_WARNING_DAYS=30
+DOMAIN_EXPIRY_CRITICAL_DAYS=7
+
+# Performans eşikleri
+SLOW_RESPONSE_WARNING_SECONDS="3.0"
+VERY_SLOW_RESPONSE_SECONDS="8.0"
+
+# İsteğe bağlı içerik doğrulaması.
+# Site içinde kesinlikle bulunması gereken benzersiz bir metin girilebilir.
+# Boş bırakılırsa yalnızca geçerli HTML yapısı kontrol edilir.
+EXPECTED_HTML_PATTERN=""
+
+urls=(
+  "http://$DOMAIN"
+  "http://www.$DOMAIN"
+  "https://www.$DOMAIN"
+  "https://$DOMAIN"
+)
+
+failed=0
+warnings=0
+
+if [[ -t 1 ]]; then
+  GREEN=$'\033[32m'
+  RED=$'\033[31m'
+  YELLOW=$'\033[33m'
+  CYAN=$'\033[36m'
+  BOLD=$'\033[1m'
+  RESET=$'\033[0m'
+else
+  GREEN=""
+  RED=""
+  YELLOW=""
+  CYAN=""
+  BOLD=""
+  RESET=""
+fi
+
+pass() {
+  echo "${GREEN}PASS${RESET}  $*"
+}
+
+fail() {
+  echo "${RED}FAIL${RESET}  $*"
+  failed=1
+}
+
+warn() {
+  echo "${YELLOW}WARN${RESET}  $*"
+  warnings=$((warnings + 1))
+}
+
+critical() {
+  echo "${RED}CRIT${RESET}  $*"
+  failed=1
+}
+
+info() {
+  echo "${CYAN}INFO${RESET}  $*"
+}
+
+section() {
+  echo
+  echo "${BOLD}== $* ==${RESET}"
+}
+
+indent() {
+  sed 's/^/      → /'
+}
+
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+float_greater_than() {
+  awk -v left="$1" -v right="$2" 'BEGIN {
+    exit !(left > right)
+  }'
+}
+
+parse_epoch() {
+  local value="$1"
+  local parsed_epoch=""
+  local formats=(
+    "%Y-%m-%dT%H:%M:%SZ"
+    "%Y-%m-%dT%H:%M:%S%z"
+    "%Y-%m-%d %H:%M:%S"
+    "%Y-%m-%d"
+    "%d-%b-%Y"
+  )
+
+  if date -u -d "$value" +%s >/dev/null 2>&1; then
+    date -u -d "$value" +%s
+    return 0
+  fi
+
+  for format in "${formats[@]}"; do
+    parsed_epoch=$(date -j -u -f "$format" "$value" +%s 2>/dev/null || true)
+
+    if [[ -n "$parsed_epoch" ]]; then
+      echo "$parsed_epoch"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+extract_domain_expiry_date() {
+  awk -F: '
+    {
+      key = tolower($1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+    }
+    key ~ /^(registry expiry date|registrar registration expiration date|expiration date|expiry date|paid-till)$/ {
+      value = $0
+      sub(/^[^:]*:[[:space:]]*/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+
+      if (value != "") {
+        print value
+        exit
+      }
+    }
+  '
+}
+
+describe_curl_error() {
+  local exit_code="$1"
+  local error_message="$2"
+
+  case "$exit_code" in
+    5)
+      echo "proxy DNS çözümleme hatası"
+      ;;
+    6)
+      echo "DNS çözümleme hatası"
+      ;;
+    7)
+      echo "TCP bağlantısı kurulamadı"
+      ;;
+    28)
+      echo "istek zaman aşımına uğradı"
+      ;;
+    35)
+      echo "TLS/SSL bağlantı hatası"
+      ;;
+    47)
+      echo "çok fazla yönlendirme veya yönlendirme döngüsü"
+      ;;
+    51|60)
+      echo "SSL sertifikası doğrulanamadı"
+      ;;
+    52)
+      echo "sunucudan boş yanıt geldi"
+      ;;
+    56)
+      echo "bağlantı sırasında veri aktarım hatası"
+      ;;
+    *)
+      if [[ -n "$error_message" ]]; then
+        echo "$error_message"
+      else
+        echo "curl hata kodu: $exit_code"
+      fi
+      ;;
+  esac
+}
+
+TMP_DIR=$(mktemp -d 2>/dev/null)
+
+if [[ -z "$TMP_DIR" || ! -d "$TMP_DIR" ]]; then
+  echo "Geçici çalışma dizini oluşturulamadı." >&2
+  exit 1
+fi
+
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+
+trap cleanup EXIT INT TERM
+
+echo "${BOLD}Site Health Check${RESET}"
+echo "Domain: $DOMAIN"
+echo "Expected URL: $EXPECTED_URL"
+
+section "Gerekli araçlar"
+
+required_commands=(
+  curl
+  dig
+  nc
+  openssl
+  whois
+)
+
+for command_name in "${required_commands[@]}"; do
+  if command_exists "$command_name"; then
+    pass "$command_name bulundu"
+  else
+    fail "$command_name bulunamadı"
+  fi
+done
+
+section "Alan adı kaydı"
+
+if command_exists whois; then
+  whois_error_file="$TMP_DIR/whois.err"
+  whois_output=$(whois "$DOMAIN" 2>"$whois_error_file")
+  whois_status=$?
+  whois_error=$(cat "$whois_error_file")
+
+  if [[ $whois_status -ne 0 ]]; then
+    fail "Domain registration lookup failed: ${whois_error:-whois hata kodu: $whois_status}"
+  else
+    domain_expires_at=$(printf '%s\n' "$whois_output" | extract_domain_expiry_date)
+
+    if [[ -z "$domain_expires_at" ]]; then
+      fail "Domain registration expiry date could not be read"
+    else
+      domain_expires_epoch=$(parse_epoch "$domain_expires_at" || true)
+
+      if [[ -z "$domain_expires_epoch" ]]; then
+        fail "Domain registration expiry date could not be parsed: $domain_expires_at"
+      else
+        now_epoch=$(date -u +%s)
+        DOMAIN_DAYS_REMAINING=$(((domain_expires_epoch - now_epoch) / 86400))
+        domain_days_remaining_label="${BOLD}${DOMAIN_DAYS_REMAINING} days${RESET}"
+
+        if (( DOMAIN_DAYS_REMAINING < 0 )); then
+          fail "Domain registration expired $((-DOMAIN_DAYS_REMAINING)) days ago"
+        elif (( DOMAIN_DAYS_REMAINING < DOMAIN_EXPIRY_CRITICAL_DAYS )); then
+          critical "Domain registration expires in ${domain_days_remaining_label}"
+        elif (( DOMAIN_DAYS_REMAINING <= DOMAIN_EXPIRY_WARNING_DAYS )); then
+          warn "Domain registration expires in ${domain_days_remaining_label}"
+        else
+          pass "Domain registration expires in ${domain_days_remaining_label}"
+        fi
+
+        echo "      → expires: $domain_expires_at"
+      fi
+    fi
+  fi
+fi
+
+section "DNS"
+
+if command_exists dig; then
+  a_records=$(dig +short A "$DOMAIN" 2>/dev/null)
+  aaaa_records=$(dig +short AAAA "$DOMAIN" 2>/dev/null)
+
+  if [[ -n "$a_records" ]]; then
+    pass "A $DOMAIN"
+    printf '%s\n' "$a_records" | indent
+  else
+    fail "A $DOMAIN — IPv4 adresi bulunamadı"
+  fi
+
+  if [[ -n "$aaaa_records" ]]; then
+    pass "AAAA $DOMAIN"
+    printf '%s\n' "$aaaa_records" | indent
+  else
+    info "AAAA $DOMAIN — IPv6 kaydı bulunamadı"
+  fi
+
+  www_a_records=$(dig +short A "www.$DOMAIN" 2>/dev/null)
+  www_aaaa_records=$(dig +short AAAA "www.$DOMAIN" 2>/dev/null)
+  www_cname_records=$(dig +short CNAME "www.$DOMAIN" 2>/dev/null)
+
+  if [[ -n "$www_a_records" || -n "$www_aaaa_records" || -n "$www_cname_records" ]]; then
+    pass "www.$DOMAIN çözümleniyor"
+
+    if [[ -n "$www_cname_records" ]]; then
+      printf '%s\n' "$www_cname_records" | indent
+    elif [[ -n "$www_a_records" ]]; then
+      printf '%s\n' "$www_a_records" | indent
+    else
+      printf '%s\n' "$www_aaaa_records" | indent
+    fi
+  else
+    fail "www.$DOMAIN — DNS kaydı bulunamadı"
+  fi
+fi
+
+section "TCP portları"
+
+if command_exists nc; then
+  if nc -z -w "$CONNECT_TIMEOUT_SECONDS" "$DOMAIN" 80 >/dev/null 2>&1; then
+    pass "TCP $DOMAIN:80 erişilebilir"
+  else
+    fail "TCP $DOMAIN:80 erişilemiyor"
+  fi
+
+  if nc -z -w "$CONNECT_TIMEOUT_SECONDS" "$DOMAIN" 443 >/dev/null 2>&1; then
+    pass "TCP $DOMAIN:443 erişilebilir"
+  else
+    fail "TCP $DOMAIN:443 erişilemiyor"
+  fi
+fi
+
+section "HTTP ve yönlendirmeler"
+
+if command_exists curl; then
+  for url in "${urls[@]}"; do
+    safe_name=$(printf '%s' "$url" | tr -c '[:alnum:]' '_')
+    curl_error_file="$TMP_DIR/curl-$safe_name.err"
+
+    result=$(curl \
+      --silent \
+      --show-error \
+      --location \
+      --output /dev/null \
+      --write-out "%{http_code}|%{url_effective}|%{num_redirects}|%{time_connect}|%{time_starttransfer}|%{time_total}" \
+      --connect-timeout "$CONNECT_TIMEOUT_SECONDS" \
+      --max-time "$REQUEST_TIMEOUT_SECONDS" \
+      --max-redirs "$MAX_REDIRECTS" \
+      "$url" \
+      2>"$curl_error_file")
+
+    curl_status=$?
+    curl_error=$(cat "$curl_error_file")
+
+    if [[ $curl_status -ne 0 ]]; then
+      error_description=$(describe_curl_error "$curl_status" "$curl_error")
+      fail "$url — $error_description"
+      continue
+    fi
+
+    IFS="|" read -r \
+      status \
+      final_url \
+      redirects \
+      connect_time \
+      starttransfer_time \
+      total_time \
+      <<< "$result"
+
+    if [[ "$status" == "200" && "$final_url" == "$EXPECTED_URL" ]]; then
+      pass "$url"
+    else
+      fail "$url"
+    fi
+
+    echo "      → final: $final_url"
+    echo "      → status: $status"
+    echo "      → redirects: $redirects"
+    echo "      → connect: ${connect_time}s"
+    echo "      → first byte: ${starttransfer_time}s"
+    echo "      → total: ${total_time}s"
+
+    if [[ "$status" != "200" ]]; then
+      fail "$url — beklenen son durum kodu 200, gelen $status"
+    fi
+
+    if [[ "$final_url" != "$EXPECTED_URL" ]]; then
+      fail "$url — canonical URL beklenen adresle eşleşmiyor"
+    fi
+
+    if float_greater_than "$total_time" "$VERY_SLOW_RESPONSE_SECONDS"; then
+      fail "$url — yanıt süresi çok yüksek: ${total_time}s"
+    elif float_greater_than "$total_time" "$SLOW_RESPONSE_WARNING_SECONDS"; then
+      warn "$url — yanıt süresi yüksek: ${total_time}s"
+    fi
+  done
+fi
+
+section "Canonical sayfa içeriği"
+
+if command_exists curl; then
+  body_file="$TMP_DIR/page-body.html"
+  headers_file="$TMP_DIR/page-headers.txt"
+  content_error_file="$TMP_DIR/content.err"
+
+  content_result=$(curl \
+    --silent \
+    --show-error \
+    --location \
+    --compressed \
+    --dump-header "$headers_file" \
+    --output "$body_file" \
+    --write-out "%{http_code}|%{url_effective}|%{size_download}|%{content_type}|%{time_total}" \
+    --connect-timeout "$CONNECT_TIMEOUT_SECONDS" \
+    --max-time "$REQUEST_TIMEOUT_SECONDS" \
+    --max-redirs "$MAX_REDIRECTS" \
+    "$EXPECTED_URL" \
+    2>"$content_error_file")
+
+  content_curl_status=$?
+  content_curl_error=$(cat "$content_error_file")
+
+  if [[ $content_curl_status -ne 0 ]]; then
+    error_description=$(describe_curl_error "$content_curl_status" "$content_curl_error")
+    fail "$EXPECTED_URL — içerik indirilemedi: $error_description"
+  else
+    IFS="|" read -r \
+      content_status \
+      content_final_url \
+      content_size \
+      content_type \
+      content_total_time \
+      <<< "$content_result"
+
+    echo "      → content-type: ${content_type:-bilinmiyor}"
+    echo "      → downloaded: ${content_size:-0} bytes"
+
+    if [[ "$content_status" == "200" ]]; then
+      pass "Canonical sayfa 200 döndürüyor"
+    else
+      fail "Canonical sayfa — beklenen 200, gelen $content_status"
+    fi
+
+    if [[ "$content_final_url" == "$EXPECTED_URL" ]]; then
+      pass "Canonical sayfa beklenen URL'de"
+    else
+      fail "Canonical sayfa başka bir URL'ye yönleniyor: $content_final_url"
+    fi
+
+    if [[ ! -s "$body_file" ]]; then
+      fail "Yanıt gövdesi boş"
+    else
+      pass "Yanıt gövdesi boş değil"
+    fi
+
+    if [[ "$content_type" == text/html* || "$content_type" == application/xhtml+xml* ]]; then
+      pass "Content-Type HTML"
+    else
+      fail "Beklenmeyen Content-Type: ${content_type:-bilinmiyor}"
+    fi
+
+    if grep -Eiq '<!doctype[[:space:]]+html|<html([[:space:]>])' "$body_file"; then
+      pass "Yanıt geçerli bir HTML belge yapısı içeriyor"
+    else
+      fail "Yanıtta HTML belge yapısı bulunamadı"
+    fi
+
+    page_title=$(
+      tr '\n' ' ' < "$body_file" |
+        sed -nE 's/.*<[Tt][Ii][Tt][Ll][Ee][^>]*>([^<]*)<\/[Tt][Ii][Tt][Ll][Ee]>.*/\1/p' |
+        head -n 1
+    )
+
+    if [[ -n "$page_title" ]]; then
+      pass "HTML title bulundu"
+      echo "      → $page_title"
+    else
+      warn "HTML title bulunamadı"
+    fi
+
+    if [[ -n "$EXPECTED_HTML_PATTERN" ]]; then
+      if grep -Fqi "$EXPECTED_HTML_PATTERN" "$body_file"; then
+        pass "Beklenen içerik bulundu: $EXPECTED_HTML_PATTERN"
+      else
+        fail "Beklenen içerik bulunamadı: $EXPECTED_HTML_PATTERN"
+      fi
+    fi
+
+    application_error_pattern='
+Fatal error|
+Parse error|
+Uncaught Error|
+Uncaught Exception|
+Error establishing a database connection|
+There has been a critical error on this website|
+The site is experiencing technical difficulties|
+WordPress database error|
+Allowed memory size of .* exhausted|
+Call to undefined function|
+Call to undefined method|
+502 Bad Gateway|
+503 Service Unavailable|
+504 Gateway Time-out|
+Internal Server Error
+'
+
+    compact_application_error_pattern=$(
+      printf '%s' "$application_error_pattern" |
+        tr -d '\n' |
+        sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+    )
+
+    if grep -Eiq "$compact_application_error_pattern" "$body_file"; then
+      fail "HTML içinde uygulama, WordPress, PHP veya sunucu hata metni bulundu"
+
+      grep -Eio "$compact_application_error_pattern" "$body_file" |
+        sort -u |
+        head -n 5 |
+        indent
+    else
+      pass "Bilinen WordPress/PHP/sunucu hata metni bulunmadı"
+    fi
+
+    parked_domain_pattern='
+domain (is|has been) parked|
+this domain is parked|
+buy this domain|
+domain for sale|
+this domain may be for sale|
+sedo domain parking|
+afternic|
+dan\.com|
+hugedomains|
+bodis|
+parkingcrew|
+namecheap parking page|
+godaddy domain parking
+'
+
+    compact_parked_domain_pattern=$(
+      printf '%s' "$parked_domain_pattern" |
+        tr -d '\n' |
+        sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+    )
+
+    if grep -Eiq "$compact_parked_domain_pattern" "$body_file"; then
+      fail "Alan adı park edilmiş olabilir"
+
+      grep -Eio "$compact_parked_domain_pattern" "$body_file" |
+        sort -u |
+        head -n 5 |
+        indent
+    else
+      pass "Bilinen alan adı park sayfası izi bulunmadı"
+    fi
+
+    if grep -Eiq 'coming soon|under construction|website is under maintenance' "$body_file"; then
+      warn "Sayfa bakım veya yakında açılacak sayfası olabilir"
+    fi
+  fi
+fi
+
+section "llms.txt"
+
+if command_exists curl; then
+  llms_error_file="$TMP_DIR/llms.err"
+
+  llms_result=$(curl \
+    --silent \
+    --show-error \
+    --location \
+    --output /dev/null \
+    --write-out "%{http_code}|%{url_effective}|%{content_type}" \
+    --connect-timeout "$CONNECT_TIMEOUT_SECONDS" \
+    --max-time "$REQUEST_TIMEOUT_SECONDS" \
+    --max-redirs "$MAX_REDIRECTS" \
+    "https://$DOMAIN/llms.txt" \
+    2>"$llms_error_file")
+
+  llms_curl_status=$?
+  llms_curl_error=$(cat "$llms_error_file")
+
+  if [[ $llms_curl_status -ne 0 ]]; then
+    error_description=$(describe_curl_error "$llms_curl_status" "$llms_curl_error")
+    fail "/llms.txt — $error_description"
+  else
+    IFS="|" read -r llms_status llms_final_url llms_content_type <<< "$llms_result"
+
+    if [[ "$llms_status" == "200" ]]; then
+      pass "/llms.txt"
+      echo "      → $llms_final_url"
+      echo "      → content-type: ${llms_content_type:-bilinmiyor}"
+    else
+      fail "/llms.txt — beklenen 200, gelen $llms_status"
+    fi
+  fi
+fi
+
+section "MX"
+
+if command_exists dig; then
+  mx_records=$(dig +short MX "$DOMAIN" 2>/dev/null)
+
+  if [[ -n "$mx_records" ]]; then
+    pass "MX $DOMAIN"
+    printf '%s\n' "$mx_records" | indent
+  else
+    fail "MX $DOMAIN — MX kaydı bulunamadı"
+  fi
+fi
+
+section "SSL sertifikası"
+
+if command_exists openssl; then
+  ssl_output=$(openssl s_client \
+    -connect "$DOMAIN:443" \
+    -servername "$DOMAIN" \
+    -verify_hostname "$DOMAIN" \
+    -verify_return_error \
+    </dev/null 2>/dev/null)
+
+  ssl_status=$?
+
+  if [[ $ssl_status -ne 0 ]]; then
+    fail "SSL $DOMAIN — sertifika zinciri veya hostname doğrulanamadı"
+  else
+    certificate=$(
+      printf '%s\n' "$ssl_output" |
+        openssl x509 -outform PEM 2>/dev/null
+    )
+
+    if [[ -z "$certificate" ]]; then
+      fail "SSL $DOMAIN — sertifika okunamadı"
+    else
+      cert_subject=$(
+        printf '%s\n' "$certificate" |
+          openssl x509 -noout -subject 2>/dev/null |
+          sed 's/^subject=//'
+      )
+
+      cert_issuer=$(
+        printf '%s\n' "$certificate" |
+          openssl x509 -noout -issuer 2>/dev/null |
+          sed 's/^issuer=//'
+      )
+
+      cert_expires_at=$(
+        printf '%s\n' "$certificate" |
+          openssl x509 -noout -enddate 2>/dev/null |
+          sed 's/^notAfter=//'
+      )
+
+      if [[ -z "$cert_expires_at" ]]; then
+        fail "SSL $DOMAIN — sertifika sona erme tarihi okunamadı"
+      elif ! printf '%s\n' "$certificate" |
+        openssl x509 \
+          -checkend "$SSL_EXPIRY_WARNING_SECONDS" \
+          -noout >/dev/null 2>&1; then
+        warn "SSL $DOMAIN — sertifika $SSL_EXPIRY_WARNING_DAYS gün içinde sona erecek"
+      else
+        pass "SSL $DOMAIN"
+      fi
+
+      echo "      → subject: $cert_subject"
+      echo "      → issuer: $cert_issuer"
+      echo "      → expires: $cert_expires_at"
+    fi
+  fi
+fi
+
+section "Sonuç"
+
+if [[ $failed -ne 0 ]]; then
+  echo "${RED}${BOLD}Site sağlık kontrolü başarısız.${RESET}"
+  echo "Warnings: $warnings"
+  exit 1
+fi
+
+if [[ $warnings -gt 0 ]]; then
+  echo "${YELLOW}${BOLD}Site çalışıyor, ancak $warnings uyarı bulundu.${RESET}"
+else
+  echo "${GREEN}${BOLD}Tüm kontroller başarılı.${RESET}"
+fi
+
+exit 0
