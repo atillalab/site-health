@@ -1,4 +1,4 @@
-# site-health
+# README
 
 A fast CLI for checking website and domain health.
 
