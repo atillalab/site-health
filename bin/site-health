@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # File: bin/site-health
-# Version: 0.2
-# Last updated: 2026-08-03
+# Version: 0.3
+# Last updated: 2026-08-04
 
-VERSION="0.2"
+VERSION="0.3"
 
 show_usage() {
   echo "Usage: site-health <domain>"
@@ -612,6 +612,35 @@ if command_exists dig; then
     printf '%s\n' "$mx_records" | indent
   else
     fail "MX $DOMAIN — MX kaydı bulunamadı"
+  fi
+fi
+
+section "SPF"
+
+if command_exists dig; then
+  txt_records=$(
+    dig +short TXT "$DOMAIN" 2>/dev/null |
+      sed 's/"[[:space:]]*"//g; s/"//g'
+  )
+
+  spf_records=$(
+    printf '%s\n' "$txt_records" |
+      grep -Ei '^[[:space:]]*v=spf1([[:space:]]|$)' || true
+  )
+
+  spf_record_count=$(
+    printf '%s\n' "$spf_records" |
+      awk 'NF { count++ } END { print count + 0 }'
+  )
+
+  if (( spf_record_count == 0 )); then
+    fail "SPF $DOMAIN — SPF TXT kaydı bulunamadı"
+  elif (( spf_record_count > 1 )); then
+    fail "SPF $DOMAIN — birden fazla SPF TXT kaydı bulundu"
+    printf '%s\n' "$spf_records" | indent
+  else
+    pass "SPF $DOMAIN"
+    printf '%s\n' "$spf_records" | indent
   fi
 fi
 

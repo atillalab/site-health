@@ -19,6 +19,7 @@ Current checks include:
 - Common server/PHP/WordPress error detection
 - Parked domain detection
 - MX record lookup
+- SPF TXT record validation
 - `llms.txt` availability check
 
 ## Usage
