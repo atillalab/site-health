@@ -20,6 +20,7 @@ Current checks include:
 - Parked domain detection
 - MX record lookup
 - SPF TXT record validation
+- DMARC TXT record validation
 - `llms.txt` availability check
 
 ## Usage

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # File: bin/site-health
-# Version: 0.3
+# Version: 0.4
 # Last updated: 2026-08-04
 
-VERSION="0.3"
+VERSION="0.4"
 
 show_usage() {
   echo "Usage: site-health <domain>"
@@ -641,6 +641,51 @@ if command_exists dig; then
   else
     pass "SPF $DOMAIN"
     printf '%s\n' "$spf_records" | indent
+  fi
+fi
+
+section "DMARC"
+
+if command_exists dig; then
+  dmarc_records=$(
+    dig +short TXT "_dmarc.$DOMAIN" 2>/dev/null |
+      sed 's/"[[:space:]]*"//g; s/"//g'
+  )
+
+  dmarc_policy_records=$(
+    printf '%s\n' "$dmarc_records" |
+      grep -Ei '^[[:space:]]*v=DMARC1([[:space:]]*;|[[:space:]]|$)' || true
+  )
+
+  dmarc_record_count=$(
+    printf '%s\n' "$dmarc_policy_records" |
+      awk 'NF { count++ } END { print count + 0 }'
+  )
+
+  if (( dmarc_record_count == 0 )); then
+    fail "DMARC _dmarc.$DOMAIN — DMARC TXT kaydı bulunamadı"
+    echo "      → Cloudflare uyarısı: @${DOMAIN} adreslerinden sahte e-postaları engellemek için DMARC kaydı ekleyin"
+  elif (( dmarc_record_count > 1 )); then
+    fail "DMARC _dmarc.$DOMAIN — birden fazla DMARC TXT kaydı bulundu"
+    printf '%s\n' "$dmarc_policy_records" | indent
+  else
+    dmarc_record=$(printf '%s\n' "$dmarc_policy_records" | head -n 1)
+    normalized_dmarc_record=$(printf '%s' "$dmarc_record" | tr '[:upper:]' '[:lower:]')
+
+    if [[ "$normalized_dmarc_record" =~ (^|[[:space:]]*;[[:space:]]*)p[[:space:]]*=[[:space:]]*(none|quarantine|reject)([[:space:]]*;|[[:space:]]*$) ]]; then
+      dmarc_policy="${BASH_REMATCH[2]}"
+
+      if [[ "$dmarc_policy" == "none" ]]; then
+        warn "DMARC _dmarc.$DOMAIN — policy p=none, yalnızca izleme modunda"
+      else
+        pass "DMARC _dmarc.$DOMAIN — policy p=$dmarc_policy"
+      fi
+
+      printf '%s\n' "$dmarc_record" | indent
+    else
+      fail "DMARC _dmarc.$DOMAIN — geçerli p= politikası bulunamadı"
+      printf '%s\n' "$dmarc_record" | indent
+    fi
   fi
 fi
 
