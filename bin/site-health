@@ -6,16 +6,66 @@
 VERSION="0.4"
 
 show_usage() {
-  echo "Usage: site-health <domain>"
+  echo "Usage: site-health [--expected-url <url>] <domain>"
   echo "Example: site-health example.com"
+  echo "Example: site-health --expected-url https://example.org/ example.com"
 }
 
-if [[ $# -ne 1 ]]; then
+EXPECTED_URL_OVERRIDE=""
+EXPECTED_URL_WAS_PROVIDED=0
+DOMAIN=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --expected-url)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        echo "Error: --expected-url requires a value." >&2
+        show_usage
+        exit 2
+      fi
+
+      EXPECTED_URL_OVERRIDE="$2"
+      EXPECTED_URL_WAS_PROVIDED=1
+      shift 2
+      ;;
+    --expected-url=*)
+      EXPECTED_URL_OVERRIDE="${1#--expected-url=}"
+      EXPECTED_URL_WAS_PROVIDED=1
+
+      if [[ -z "$EXPECTED_URL_OVERRIDE" ]]; then
+        echo "Error: --expected-url requires a value." >&2
+        show_usage
+        exit 2
+      fi
+
+      shift
+      ;;
+    -h|--help)
+      show_usage
+      exit 0
+      ;;
+    -*)
+      echo "Error: Unknown option: $1" >&2
+      show_usage
+      exit 2
+      ;;
+    *)
+      if [[ -n "$DOMAIN" ]]; then
+        echo "Error: Multiple domains provided." >&2
+        show_usage
+        exit 2
+      fi
+
+      DOMAIN="$1"
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$DOMAIN" ]]; then
   show_usage
   exit 2
 fi
-
-DOMAIN="$1"
 
 DOMAIN="${DOMAIN#http://}"
 DOMAIN="${DOMAIN#https://}"
@@ -27,7 +77,69 @@ if [[ -z "$DOMAIN" ]]; then
   exit 2
 fi
 
-EXPECTED_URL="https://${DOMAIN}/"
+normalize_expected_url() {
+  local value="$1"
+  local without_fragment=""
+  local scheme=""
+  local rest=""
+  local host=""
+  local path_and_query=""
+
+  case "$value" in
+    http://*)
+      scheme="http://"
+      rest="${value#http://}"
+      ;;
+    https://*)
+      scheme="https://"
+      rest="${value#https://}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  without_fragment="${rest%%#*}"
+  host="${without_fragment%%/*}"
+  path_and_query="${without_fragment#"$host"}"
+
+  if [[ -z "$host" ]]; then
+    return 1
+  fi
+
+  if [[ -z "$path_and_query" ]]; then
+    path_and_query="/"
+  fi
+
+  printf '%s%s%s\n' "$scheme" "$host" "$path_and_query"
+}
+
+url_host() {
+  local value="$1"
+
+  value="${value#http://}"
+  value="${value#https://}"
+  value="${value%%/*}"
+  value="${value%%:*}"
+
+  printf '%s\n' "$value"
+}
+
+DEFAULT_EXPECTED_URL="https://${DOMAIN}/"
+
+if [[ -n "$EXPECTED_URL_OVERRIDE" ]]; then
+  EXPECTED_URL=$(normalize_expected_url "$EXPECTED_URL_OVERRIDE" || true)
+
+  if [[ -z "$EXPECTED_URL" ]]; then
+    echo "Error: --expected-url must be a valid absolute http:// or https:// URL." >&2
+    exit 2
+  fi
+else
+  EXPECTED_URL="$DEFAULT_EXPECTED_URL"
+fi
+
+EXPECTED_HOST=$(url_host "$EXPECTED_URL")
+FORWARDING_HINT_URL=""
 
 CONNECT_TIMEOUT_SECONDS=5
 REQUEST_TIMEOUT_SECONDS=15
@@ -374,7 +486,11 @@ if command_exists curl; then
       <<< "$result"
 
     if [[ "$status" == "200" && "$final_url" == "$EXPECTED_URL" ]]; then
-      pass "$url"
+      if [[ "$EXPECTED_HOST" != "$DOMAIN" ]]; then
+        pass "$url — forwarded to expected URL"
+      else
+        pass "$url"
+      fi
     else
       fail "$url"
     fi
@@ -386,12 +502,22 @@ if command_exists curl; then
     echo "      → first byte: ${starttransfer_time}s"
     echo "      → total: ${total_time}s"
 
+    final_host=$(url_host "$final_url")
+
+    if [[ $EXPECTED_URL_WAS_PROVIDED -eq 0 &&
+      -z "$FORWARDING_HINT_URL" &&
+      "$status" == "200" &&
+      "$final_url" != "$EXPECTED_URL" &&
+      "$final_host" != "$DOMAIN" ]]; then
+      FORWARDING_HINT_URL="$final_url"
+    fi
+
     if [[ "$status" != "200" ]]; then
       fail "$url — beklenen son durum kodu 200, gelen $status"
     fi
 
     if [[ "$final_url" != "$EXPECTED_URL" ]]; then
-      fail "$url — canonical URL beklenen adresle eşleşmiyor"
+      fail "$url — unexpected final URL, expected $EXPECTED_URL"
     fi
 
     if float_greater_than "$total_time" "$VERY_SLOW_RESPONSE_SECONDS"; then
@@ -448,9 +574,13 @@ if command_exists curl; then
     fi
 
     if [[ "$content_final_url" == "$EXPECTED_URL" ]]; then
-      pass "Canonical sayfa beklenen URL'de"
+      if [[ "$EXPECTED_HOST" != "$DOMAIN" ]]; then
+        pass "Canonical sayfa beklenen yönlendirme hedefinde"
+      else
+        pass "Canonical sayfa beklenen URL'de"
+      fi
     else
-      fail "Canonical sayfa başka bir URL'ye yönleniyor: $content_final_url"
+      fail "Canonical sayfa beklenmeyen URL'ye yönleniyor: $content_final_url"
     fi
 
     if [[ ! -s "$body_file" ]]; then
@@ -750,9 +880,17 @@ fi
 
 section "Sonuç"
 
+print_forwarding_hint() {
+  if [[ -n "$FORWARDING_HINT_URL" ]]; then
+    info "Domain looks forwarded to $FORWARDING_HINT_URL"
+    echo "      → suggested: bin/site-health --expected-url $FORWARDING_HINT_URL $DOMAIN"
+  fi
+}
+
 if [[ $failed -ne 0 ]]; then
   echo "${RED}${BOLD}Site sağlık kontrolü başarısız.${RESET}"
   echo "Warnings: $warnings"
+  print_forwarding_hint
   exit 1
 fi
 
@@ -761,5 +899,7 @@ if [[ $warnings -gt 0 ]]; then
 else
   echo "${GREEN}${BOLD}Tüm kontroller başarılı.${RESET}"
 fi
+
+print_forwarding_hint
 
 exit 0

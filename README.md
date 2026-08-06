@@ -29,6 +29,12 @@ Current checks include:
 site-health example.com
 ```
 
+For a forwarded domain, provide the expected final URL:
+
+```bash
+site-health --expected-url https://example.org/ example.com
+```
+
 ## Installation
 
 Clone the repository:
