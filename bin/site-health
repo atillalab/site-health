@@ -883,7 +883,7 @@ section "Sonuç"
 print_forwarding_hint() {
   if [[ -n "$FORWARDING_HINT_URL" ]]; then
     info "Domain looks forwarded to $FORWARDING_HINT_URL"
-    echo "      → suggested: bin/site-health --expected-url $FORWARDING_HINT_URL $DOMAIN"
+    echo "      → suggested: site-health --expected-url $FORWARDING_HINT_URL $DOMAIN"
   fi
 }
 
