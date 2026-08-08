@@ -275,6 +275,25 @@ extract_domain_expiry_date() {
   '
 }
 
+extract_domain_registrar() {
+  awk -F: '
+    {
+      key = tolower($1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+    }
+    key ~ /^(registrar|registrar name|sponsoring registrar)$/ {
+      value = $0
+      sub(/^[^:]*:[[:space:]]*/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+
+      if (value != "") {
+        print value
+        exit
+      }
+    }
+  '
+}
+
 describe_curl_error() {
   local exit_code="$1"
   local error_message="$2"
@@ -363,6 +382,14 @@ if command_exists whois; then
   if [[ $whois_status -ne 0 ]]; then
     fail "Domain registration lookup failed: ${whois_error:-whois hata kodu: $whois_status}"
   else
+    domain_registrar=$(printf '%s\n' "$whois_output" | extract_domain_registrar)
+
+    if [[ -n "$domain_registrar" ]]; then
+      info "Registrar: $domain_registrar"
+    else
+      info "Registrar could not be read"
+    fi
+
     domain_expires_at=$(printf '%s\n' "$whois_output" | extract_domain_expiry_date)
 
     if [[ -z "$domain_expires_at" ]]; then

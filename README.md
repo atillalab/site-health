@@ -9,6 +9,7 @@ A fast CLI for checking website and domain health.
 Current checks include:
 
 - Domain registration expiry
+- Registrar lookup
 - DNS resolution (A, AAAA, CNAME)
 - TCP connectivity (80/443)
 - HTTP/HTTPS availability
