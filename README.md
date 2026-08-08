@@ -10,6 +10,7 @@ Current checks include:
 
 - Domain registration expiry
 - Registrar lookup
+- Optional verbose output for troubleshooting
 - DNS resolution (A, AAAA, CNAME)
 - TCP connectivity (80/443)
 - HTTP/HTTPS availability
@@ -34,6 +35,12 @@ For a forwarded domain, provide the expected final URL:
 
 ```bash
 site-health --expected-url https://example.org/ example.com
+```
+
+For troubleshooting, show successful local tool checks:
+
+```bash
+site-health --verbose example.com
 ```
 
 ## Installation

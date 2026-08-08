@@ -6,17 +6,23 @@
 VERSION="0.4"
 
 show_usage() {
-  echo "Usage: site-health [--expected-url <url>] <domain>"
+  echo "Usage: site-health [--verbose] [--expected-url <url>] <domain>"
   echo "Example: site-health example.com"
+  echo "Example: site-health --verbose example.com"
   echo "Example: site-health --expected-url https://example.org/ example.com"
 }
 
 EXPECTED_URL_OVERRIDE=""
 EXPECTED_URL_WAS_PROVIDED=0
+VERBOSE_OUTPUT=0
 DOMAIN=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --verbose)
+      VERBOSE_OUTPUT=1
+      shift
+      ;;
     --expected-url)
       if [[ $# -lt 2 || -z "$2" ]]; then
         echo "Error: --expected-url requires a value." >&2
@@ -353,7 +359,9 @@ echo "${BOLD}Site Health Check${RESET}"
 echo "Domain: $DOMAIN"
 echo "Expected URL: $EXPECTED_URL"
 
-section "Gerekli araçlar"
+if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+  section "Gerekli araçlar"
+fi
 
 required_commands=(
   curl
@@ -365,7 +373,9 @@ required_commands=(
 
 for command_name in "${required_commands[@]}"; do
   if command_exists "$command_name"; then
-    pass "$command_name bulundu"
+    if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+      pass "$command_name bulundu"
+    fi
   else
     fail "$command_name bulunamadı"
   fi
