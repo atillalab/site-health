@@ -777,6 +777,22 @@ if command_exists dig; then
   if [[ -n "$mx_records" ]]; then
     pass "MX $DOMAIN"
     printf '%s\n' "$mx_records" | indent
+
+    mx_record_count=$(
+      printf '%s\n' "$mx_records" |
+        awk 'NF { count++ } END { print count + 0 }'
+    )
+
+    null_mx_records=$(
+      printf '%s\n' "$mx_records" |
+        awk '$1 == "0" && $2 == "." { count++ } END { print count + 0 }'
+    )
+
+    if (( null_mx_records == 1 && mx_record_count == 1 )); then
+      info "Null MX detected — this domain explicitly does not accept email"
+    elif (( null_mx_records > 0 )); then
+      info "Null MX record detected alongside other MX records"
+    fi
   else
     fail "MX $DOMAIN — MX kaydı bulunamadı"
   fi
