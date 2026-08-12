@@ -20,6 +20,7 @@ Current checks include:
 - HTML content validation
 - Common server/PHP/WordPress error detection
 - Parked domain detection
+- Final summary with failure and warning counts
 - MX record lookup, including Null MX recognition
 - SPF TXT record validation
 - DMARC TXT record validation

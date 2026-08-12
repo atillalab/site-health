@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # File: bin/site-health
-# Version: 0.4
-# Last updated: 2026-08-04
+# Version: 0.5
+# Last updated: 2026-08-12
 
-VERSION="0.4"
+VERSION="0.5"
 
 show_usage() {
   echo "Usage: site-health [--verbose] [--expected-url <url>] <domain>"
@@ -173,7 +173,7 @@ urls=(
   "https://$DOMAIN"
 )
 
-failed=0
+failures=0
 warnings=0
 
 if [[ -t 1 ]]; then
@@ -198,7 +198,7 @@ pass() {
 
 fail() {
   echo "${RED}FAIL${RESET}  $*"
-  failed=1
+  failures=$((failures + 1))
 }
 
 warn() {
@@ -208,7 +208,7 @@ warn() {
 
 critical() {
   echo "${RED}CRIT${RESET}  $*"
-  failed=1
+  failures=$((failures + 1))
 }
 
 info() {
@@ -940,8 +940,9 @@ print_forwarding_hint() {
   fi
 }
 
-if [[ $failed -ne 0 ]]; then
+if [[ $failures -gt 0 ]]; then
   echo "${RED}${BOLD}Site sağlık kontrolü başarısız.${RESET}"
+  echo "Failures: $failures"
   echo "Warnings: $warnings"
   print_forwarding_hint
   exit 1
@@ -952,6 +953,9 @@ if [[ $warnings -gt 0 ]]; then
 else
   echo "${GREEN}${BOLD}Tüm kontroller başarılı.${RESET}"
 fi
+
+echo "Failures: $failures"
+echo "Warnings: $warnings"
 
 print_forwarding_hint
 
