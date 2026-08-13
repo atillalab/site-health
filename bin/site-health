@@ -128,7 +128,7 @@ url_host() {
   value="${value%%/*}"
   value="${value%%:*}"
 
-  printf '%s\n' "$value"
+  printf '%s\n' "$value" | tr '[:upper:]' '[:lower:]'
 }
 
 DEFAULT_EXPECTED_URL="https://${DOMAIN}/"
@@ -146,6 +146,9 @@ fi
 
 EXPECTED_HOST=$(url_host "$EXPECTED_URL")
 FORWARDING_HINT_URL=""
+FORWARDING_AUTO_DETECTED=0
+FORWARDING_AMBIGUOUS=0
+FORWARDING_CANDIDATES=()
 
 CONNECT_TIMEOUT_SECONDS=5
 REQUEST_TIMEOUT_SECONDS=15
@@ -226,6 +229,20 @@ indent() {
 
 command_exists() {
   command -v "$1" >/dev/null 2>&1
+}
+
+same_site_host() {
+  local host="$1"
+  local domain=""
+  local apex_domain=""
+
+  domain=$(printf '%s\n' "$DOMAIN" | tr '[:upper:]' '[:lower:]')
+  apex_domain="${domain#www.}"
+
+  [[ "$host" == "$domain" ||
+    "$host" == "www.$domain" ||
+    "$host" == "$apex_domain" ||
+    "$host" == "www.$apex_domain" ]]
 }
 
 float_greater_than() {
@@ -342,6 +359,97 @@ describe_curl_error() {
   esac
 }
 
+probe_http_url() {
+  local url="$1"
+  local prefix="$2"
+  local safe_name=""
+  local curl_error_file=""
+  local result=""
+
+  safe_name=$(printf '%s' "$url" | tr -c '[:alnum:]' '_')
+  curl_error_file="$TMP_DIR/${prefix}-${safe_name}.err"
+
+  result=$(curl \
+    --silent \
+    --show-error \
+    --location \
+    --output /dev/null \
+    --write-out "%{http_code}|%{url_effective}|%{num_redirects}|%{time_connect}|%{time_starttransfer}|%{time_total}" \
+    --connect-timeout "$CONNECT_TIMEOUT_SECONDS" \
+    --max-time "$REQUEST_TIMEOUT_SECONDS" \
+    --max-redirs "$MAX_REDIRECTS" \
+    "$url" \
+    2>"$curl_error_file")
+
+  HTTP_CURL_STATUS=$?
+  HTTP_CURL_ERROR=$(cat "$curl_error_file")
+
+  if [[ $HTTP_CURL_STATUS -ne 0 ]]; then
+    return 1
+  fi
+
+  IFS="|" read -r \
+    HTTP_STATUS \
+    HTTP_FINAL_URL \
+    HTTP_REDIRECTS \
+    HTTP_CONNECT_TIME \
+    HTTP_STARTTRANSFER_TIME \
+    HTTP_TOTAL_TIME \
+    <<< "$result"
+
+  return 0
+}
+
+add_forwarding_candidate() {
+  local candidate="$1"
+  local existing=""
+
+  for existing in "${FORWARDING_CANDIDATES[@]}"; do
+    if [[ "$existing" == "$candidate" ]]; then
+      return
+    fi
+  done
+
+  FORWARDING_CANDIDATES+=("$candidate")
+}
+
+detect_forwarded_expected_url() {
+  local url=""
+  local final_host=""
+
+  if [[ $EXPECTED_URL_WAS_PROVIDED -eq 1 ]]; then
+    return
+  fi
+
+  if ! command_exists curl; then
+    return
+  fi
+
+  for url in "${urls[@]}"; do
+    if ! probe_http_url "$url" "forwarding"; then
+      continue
+    fi
+
+    final_host=$(url_host "$HTTP_FINAL_URL")
+
+    if [[ "$HTTP_STATUS" == "200" &&
+      "$HTTP_FINAL_URL" != "$EXPECTED_URL" ]] &&
+      ! same_site_host "$final_host"; then
+      add_forwarding_candidate "$HTTP_FINAL_URL"
+    fi
+  done
+
+  if [[ ${#FORWARDING_CANDIDATES[@]} -eq 1 ]]; then
+    FORWARDING_HINT_URL="${FORWARDING_CANDIDATES[0]}"
+    EXPECTED_URL="$FORWARDING_HINT_URL"
+    EXPECTED_HOST=$(url_host "$EXPECTED_URL")
+    FORWARDING_AUTO_DETECTED=1
+  elif [[ ${#FORWARDING_CANDIDATES[@]} -gt 1 ]]; then
+    FORWARDING_HINT_URL="${FORWARDING_CANDIDATES[0]}"
+    FORWARDING_AMBIGUOUS=1
+  fi
+}
+
 TMP_DIR=$(mktemp -d 2>/dev/null)
 
 if [[ -z "$TMP_DIR" || ! -d "$TMP_DIR" ]]; then
@@ -355,9 +463,15 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+detect_forwarded_expected_url
+
 echo "${BOLD}Site Health Check${RESET}"
 echo "Domain: $DOMAIN"
 echo "Expected URL: $EXPECTED_URL"
+if [[ $FORWARDING_AUTO_DETECTED -eq 1 ]]; then
+  info "Domain forwards to $EXPECTED_URL"
+  info "Using forwarded URL as expected URL for this run"
+fi
 
 if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
   section "Gerekli araçlar"
@@ -489,40 +603,13 @@ section "HTTP ve yönlendirmeler"
 
 if command_exists curl; then
   for url in "${urls[@]}"; do
-    safe_name=$(printf '%s' "$url" | tr -c '[:alnum:]' '_')
-    curl_error_file="$TMP_DIR/curl-$safe_name.err"
-
-    result=$(curl \
-      --silent \
-      --show-error \
-      --location \
-      --output /dev/null \
-      --write-out "%{http_code}|%{url_effective}|%{num_redirects}|%{time_connect}|%{time_starttransfer}|%{time_total}" \
-      --connect-timeout "$CONNECT_TIMEOUT_SECONDS" \
-      --max-time "$REQUEST_TIMEOUT_SECONDS" \
-      --max-redirs "$MAX_REDIRECTS" \
-      "$url" \
-      2>"$curl_error_file")
-
-    curl_status=$?
-    curl_error=$(cat "$curl_error_file")
-
-    if [[ $curl_status -ne 0 ]]; then
-      error_description=$(describe_curl_error "$curl_status" "$curl_error")
+    if ! probe_http_url "$url" "curl"; then
+      error_description=$(describe_curl_error "$HTTP_CURL_STATUS" "$HTTP_CURL_ERROR")
       fail "$url — $error_description"
       continue
     fi
 
-    IFS="|" read -r \
-      status \
-      final_url \
-      redirects \
-      connect_time \
-      starttransfer_time \
-      total_time \
-      <<< "$result"
-
-    if [[ "$status" == "200" && "$final_url" == "$EXPECTED_URL" ]]; then
+    if [[ "$HTTP_STATUS" == "200" && "$HTTP_FINAL_URL" == "$EXPECTED_URL" ]]; then
       if [[ "$EXPECTED_HOST" != "$DOMAIN" ]]; then
         pass "$url — forwarded to expected URL"
       else
@@ -532,35 +619,25 @@ if command_exists curl; then
       fail "$url"
     fi
 
-    echo "      → final: $final_url"
-    echo "      → status: $status"
-    echo "      → redirects: $redirects"
-    echo "      → connect: ${connect_time}s"
-    echo "      → first byte: ${starttransfer_time}s"
-    echo "      → total: ${total_time}s"
+    echo "      → final: $HTTP_FINAL_URL"
+    echo "      → status: $HTTP_STATUS"
+    echo "      → redirects: $HTTP_REDIRECTS"
+    echo "      → connect: ${HTTP_CONNECT_TIME}s"
+    echo "      → first byte: ${HTTP_STARTTRANSFER_TIME}s"
+    echo "      → total: ${HTTP_TOTAL_TIME}s"
 
-    final_host=$(url_host "$final_url")
-
-    if [[ $EXPECTED_URL_WAS_PROVIDED -eq 0 &&
-      -z "$FORWARDING_HINT_URL" &&
-      "$status" == "200" &&
-      "$final_url" != "$EXPECTED_URL" &&
-      "$final_host" != "$DOMAIN" ]]; then
-      FORWARDING_HINT_URL="$final_url"
+    if [[ "$HTTP_STATUS" != "200" ]]; then
+      fail "$url — beklenen son durum kodu 200, gelen $HTTP_STATUS"
     fi
 
-    if [[ "$status" != "200" ]]; then
-      fail "$url — beklenen son durum kodu 200, gelen $status"
-    fi
-
-    if [[ "$final_url" != "$EXPECTED_URL" ]]; then
+    if [[ "$HTTP_FINAL_URL" != "$EXPECTED_URL" ]]; then
       fail "$url — unexpected final URL, expected $EXPECTED_URL"
     fi
 
-    if float_greater_than "$total_time" "$VERY_SLOW_RESPONSE_SECONDS"; then
-      fail "$url — yanıt süresi çok yüksek: ${total_time}s"
-    elif float_greater_than "$total_time" "$SLOW_RESPONSE_WARNING_SECONDS"; then
-      warn "$url — yanıt süresi yüksek: ${total_time}s"
+    if float_greater_than "$HTTP_TOTAL_TIME" "$VERY_SLOW_RESPONSE_SECONDS"; then
+      fail "$url — yanıt süresi çok yüksek: ${HTTP_TOTAL_TIME}s"
+    elif float_greater_than "$HTTP_TOTAL_TIME" "$SLOW_RESPONSE_WARNING_SECONDS"; then
+      warn "$url — yanıt süresi yüksek: ${HTTP_TOTAL_TIME}s"
     fi
   done
 fi
@@ -934,7 +1011,19 @@ fi
 section "Sonuç"
 
 print_forwarding_hint() {
-  if [[ -n "$FORWARDING_HINT_URL" ]]; then
+  local candidate=""
+
+  if [[ $FORWARDING_AUTO_DETECTED -eq 1 ]]; then
+    return
+  fi
+
+  if [[ $FORWARDING_AMBIGUOUS -eq 1 ]]; then
+    info "Domain appears to forward to multiple URLs"
+    for candidate in "${FORWARDING_CANDIDATES[@]}"; do
+      echo "      → candidate: $candidate"
+    done
+    echo "      → choose one: site-health --expected-url <url> $DOMAIN"
+  elif [[ -n "$FORWARDING_HINT_URL" ]]; then
     info "Domain looks forwarded to $FORWARDING_HINT_URL"
     echo "      → suggested: site-health --expected-url $FORWARDING_HINT_URL $DOMAIN"
   fi

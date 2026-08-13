@@ -32,7 +32,13 @@ Current checks include:
 site-health example.com
 ```
 
-For a forwarded domain, provide the expected final URL:
+Forwarded domains are detected automatically when the final URL is unambiguous:
+
+```bash
+site-health example.com
+```
+
+To strictly require a specific final URL, provide it explicitly:
 
 ```bash
 site-health --expected-url https://example.org/ example.com
