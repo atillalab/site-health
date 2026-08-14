@@ -1271,6 +1271,14 @@ render_simple_status_row() {
   printf '  %-12s %s\n' "$label" "$(format_status_token "$status")"
 }
 
+should_show_dashboard_expected_url() {
+  [[ $EXPECTED_URL_WAS_PROVIDED -eq 1 ||
+    $FORWARDING_AUTO_DETECTED -eq 1 ||
+    $FORWARDING_AMBIGUOUS -eq 1 ||
+    -n "$FORWARDING_HINT_URL" ||
+    "$REDIRECT_STATUS" != "OK" ]]
+}
+
 render_issues() {
   local index=0
   local printed=0
@@ -1309,6 +1317,10 @@ render_dashboard() {
   echo "${BOLD}SITE HEALTH${RESET}"
   echo "────────────────────────────────────────"
   echo "● $DOMAIN"
+
+  if should_show_dashboard_expected_url; then
+    printf '  %-12s %s\n' "Expected" "$EXPECTED_URL"
+  fi
 
   render_simple_status_row "HTTPS" "$HTTPS_STATUS"
   render_simple_status_row "DNS" "$DNS_STATUS"

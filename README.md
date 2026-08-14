@@ -49,6 +49,22 @@ SITE HEALTH
 Status: HEALTHY
 ```
 
+When a forwarded or explicit canonical URL matters, the dashboard includes it:
+
+```text
+SITE HEALTH
+────────────────────────────────────────
+● example.com
+  Expected     https://example.org/
+  HTTPS        OK
+  DNS          OK
+  SSL          81 days
+  Redirect     OK
+  Response     184 ms
+  Mail         OK
+Status: HEALTHY
+```
+
 Show detailed troubleshooting diagnostics instead of the dashboard:
 
 ```bash
