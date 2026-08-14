@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 # File: bin/site-health
-# Version: 0.5
-# Last updated: 2026-08-12
+# Version: 0.6
+# Last updated: 2026-08-14
 
-VERSION="0.5"
+VERSION="0.6"
 
 show_usage() {
-  echo "Usage: site-health [--verbose] [--expected-url <url>] <domain>"
+  echo "Usage: site-health [--mail] [--verbose] [--expected-url <url>] <domain>"
   echo "Example: site-health example.com"
+  echo "Example: site-health --mail example.com"
   echo "Example: site-health --verbose example.com"
   echo "Example: site-health --expected-url https://example.org/ example.com"
 }
 
 EXPECTED_URL_OVERRIDE=""
 EXPECTED_URL_WAS_PROVIDED=0
+MAIL_ONLY=0
 VERBOSE_OUTPUT=0
 DOMAIN=""
 
@@ -21,6 +23,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --verbose)
       VERBOSE_OUTPUT=1
+      shift
+      ;;
+    --mail)
+      MAIL_ONLY=1
       shift
       ;;
     --expected-url)
@@ -463,38 +469,54 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-detect_forwarded_expected_url
+print_header() {
+  echo "${BOLD}Site Health Check${RESET}"
+  echo "Domain: $DOMAIN"
 
-echo "${BOLD}Site Health Check${RESET}"
-echo "Domain: $DOMAIN"
-echo "Expected URL: $EXPECTED_URL"
-if [[ $FORWARDING_AUTO_DETECTED -eq 1 ]]; then
-  info "Domain forwards to $EXPECTED_URL"
-  info "Using forwarded URL as expected URL for this run"
-fi
-
-if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
-  section "Gerekli araçlar"
-fi
-
-required_commands=(
-  curl
-  dig
-  nc
-  openssl
-  whois
-)
-
-for command_name in "${required_commands[@]}"; do
-  if command_exists "$command_name"; then
-    if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
-      pass "$command_name bulundu"
-    fi
-  else
-    fail "$command_name bulunamadı"
+  if [[ $MAIL_ONLY -eq 1 ]]; then
+    echo "Mode: Mail"
+    return
   fi
-done
 
+  echo "Expected URL: $EXPECTED_URL"
+  if [[ $FORWARDING_AUTO_DETECTED -eq 1 ]]; then
+    info "Domain forwards to $EXPECTED_URL"
+    info "Using forwarded URL as expected URL for this run"
+  fi
+}
+
+check_required_commands() {
+  local required_commands=()
+  local command_name=""
+
+  if [[ $MAIL_ONLY -eq 1 ]]; then
+    required_commands=(dig)
+  else
+    required_commands=(
+      curl
+      dig
+      nc
+      openssl
+      whois
+    )
+  fi
+
+  if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+    section "Gerekli araçlar"
+  fi
+
+  for command_name in "${required_commands[@]}"; do
+    if command_exists "$command_name"; then
+      if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+        pass "$command_name bulundu"
+      fi
+    else
+      fail "$command_name bulunamadı"
+    fi
+  done
+}
+
+check_domain_registration() {
 section "Alan adı kaydı"
 
 if command_exists whois; then
@@ -543,7 +565,9 @@ if command_exists whois; then
     fi
   fi
 fi
+}
 
+check_dns() {
 section "DNS"
 
 if command_exists dig; then
@@ -582,7 +606,9 @@ if command_exists dig; then
     fail "www.$DOMAIN — DNS kaydı bulunamadı"
   fi
 fi
+}
 
+check_tcp() {
 section "TCP portları"
 
 if command_exists nc; then
@@ -598,7 +624,9 @@ if command_exists nc; then
     fail "TCP $DOMAIN:443 erişilemiyor"
   fi
 fi
+}
 
+check_http() {
 section "HTTP ve yönlendirmeler"
 
 if command_exists curl; then
@@ -641,7 +669,9 @@ if command_exists curl; then
     fi
   done
 fi
+}
 
+check_content() {
 section "Canonical sayfa içeriği"
 
 if command_exists curl; then
@@ -809,7 +839,9 @@ godaddy domain parking
     fi
   fi
 fi
+}
 
+check_llms() {
 section "llms.txt"
 
 if command_exists curl; then
@@ -845,7 +877,9 @@ if command_exists curl; then
     fi
   fi
 fi
+}
 
+check_mx() {
 section "MX"
 
 if command_exists dig; then
@@ -874,7 +908,9 @@ if command_exists dig; then
     fail "MX $DOMAIN — MX kaydı bulunamadı"
   fi
 fi
+}
 
+check_spf() {
 section "SPF"
 
 if command_exists dig; then
@@ -903,7 +939,9 @@ if command_exists dig; then
     printf '%s\n' "$spf_records" | indent
   fi
 fi
+}
 
+check_dmarc() {
 section "DMARC"
 
 if command_exists dig; then
@@ -948,7 +986,15 @@ if command_exists dig; then
     fi
   fi
 fi
+}
 
+check_mail() {
+  check_mx
+  check_spf
+  check_dmarc
+}
+
+check_ssl() {
 section "SSL sertifikası"
 
 if command_exists openssl; then
@@ -1007,8 +1053,7 @@ if command_exists openssl; then
     fi
   fi
 fi
-
-section "Sonuç"
+}
 
 print_forwarding_hint() {
   local candidate=""
@@ -1029,23 +1074,70 @@ print_forwarding_hint() {
   fi
 }
 
-if [[ $failures -gt 0 ]]; then
-  echo "${RED}${BOLD}Site sağlık kontrolü başarısız.${RESET}"
+print_summary() {
+  section "Sonuç"
+
+  if [[ $MAIL_ONLY -eq 1 ]]; then
+    if [[ $failures -gt 0 ]]; then
+      echo "${RED}${BOLD}Mail sağlık kontrolü başarısız.${RESET}"
+      echo "Failures: $failures"
+      echo "Warnings: $warnings"
+      exit 1
+    fi
+
+    if [[ $warnings -gt 0 ]]; then
+      echo "${YELLOW}${BOLD}Mail kontrolleri tamamlandı, ancak $warnings uyarı bulundu.${RESET}"
+    else
+      echo "${GREEN}${BOLD}Tüm mail kontrolleri başarılı.${RESET}"
+    fi
+
+    echo "Failures: $failures"
+    echo "Warnings: $warnings"
+    exit 0
+  fi
+
+  if [[ $failures -gt 0 ]]; then
+    echo "${RED}${BOLD}Site sağlık kontrolü başarısız.${RESET}"
+    echo "Failures: $failures"
+    echo "Warnings: $warnings"
+    print_forwarding_hint
+    exit 1
+  fi
+
+  if [[ $warnings -gt 0 ]]; then
+    echo "${YELLOW}${BOLD}Site çalışıyor, ancak $warnings uyarı bulundu.${RESET}"
+  else
+    echo "${GREEN}${BOLD}Tüm kontroller başarılı.${RESET}"
+  fi
+
   echo "Failures: $failures"
   echo "Warnings: $warnings"
+
   print_forwarding_hint
-  exit 1
-fi
 
-if [[ $warnings -gt 0 ]]; then
-  echo "${YELLOW}${BOLD}Site çalışıyor, ancak $warnings uyarı bulundu.${RESET}"
+  exit 0
+}
+
+check_all() {
+  check_domain_registration
+  check_dns
+  check_tcp
+  check_http
+  check_content
+  check_llms
+  check_mail
+  check_ssl
+}
+
+if [[ $MAIL_ONLY -eq 1 ]]; then
+  print_header
+  check_required_commands
+  check_mail
 else
-  echo "${GREEN}${BOLD}Tüm kontroller başarılı.${RESET}"
+  detect_forwarded_expected_url
+  print_header
+  check_required_commands
+  check_all
 fi
 
-echo "Failures: $failures"
-echo "Warnings: $warnings"
-
-print_forwarding_hint
-
-exit 0
+print_summary

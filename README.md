@@ -28,9 +28,23 @@ Current checks include:
 
 ## Usage
 
+Run the full website/domain health check:
+
 ```bash
 site-health example.com
 ```
+
+Run only mail-related DNS checks:
+
+```bash
+site-health --mail example.com
+```
+
+Mail mode checks only:
+
+- MX
+- SPF
+- DMARC
 
 Forwarded domains are detected automatically when the final URL is unambiguous:
 
