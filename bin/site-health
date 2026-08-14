@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # File: bin/site-health
-# Version: 0.6
+# Version: 0.7
 # Last updated: 2026-08-14
 
-VERSION="0.6"
+VERSION="0.7"
 
 show_usage() {
   echo "Usage: site-health [--mail] [--verbose] [--expected-url <url>] <domain>"
@@ -185,6 +185,21 @@ urls=(
 failures=0
 warnings=0
 
+ISSUE_LEVELS=()
+ISSUE_MESSAGES=()
+
+DNS_STATUS="OK"
+HTTPS_STATUS="OK"
+SSL_STATUS="OK"
+SSL_DAYS_REMAINING=""
+REDIRECT_STATUS="OK"
+RESPONSE_STATUS="OK"
+RESPONSE_MS=""
+MAIL_STATUS="OK"
+MX_STATUS="OK"
+SPF_STATUS="OK"
+DMARC_STATUS="OK"
+
 if [[ -t 1 ]]; then
   GREEN=$'\033[32m'
   RED=$'\033[31m'
@@ -202,35 +217,67 @@ else
 fi
 
 pass() {
-  echo "${GREEN}PASS${RESET}  $*"
+  if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+    echo "${GREEN}PASS${RESET}  $*"
+  fi
 }
 
 fail() {
-  echo "${RED}FAIL${RESET}  $*"
+  if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+    echo "${RED}FAIL${RESET}  $*"
+  fi
+  ISSUE_LEVELS+=("FAIL")
+  ISSUE_MESSAGES+=("$*")
   failures=$((failures + 1))
 }
 
 warn() {
-  echo "${YELLOW}WARN${RESET}  $*"
+  if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+    echo "${YELLOW}WARN${RESET}  $*"
+  fi
+  ISSUE_LEVELS+=("WARN")
+  ISSUE_MESSAGES+=("$*")
   warnings=$((warnings + 1))
 }
 
 critical() {
-  echo "${RED}CRIT${RESET}  $*"
+  if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+    echo "${RED}CRIT${RESET}  $*"
+  fi
+  ISSUE_LEVELS+=("FAIL")
+  ISSUE_MESSAGES+=("$*")
   failures=$((failures + 1))
 }
 
 info() {
-  echo "${CYAN}INFO${RESET}  $*"
+  if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+    echo "${CYAN}INFO${RESET}  $*"
+  fi
 }
 
 section() {
-  echo
-  echo "${BOLD}== $* ==${RESET}"
+  if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+    echo
+    echo "${BOLD}== $* ==${RESET}"
+  fi
 }
 
 indent() {
   sed 's/^/      → /'
+}
+
+detail() {
+  if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+    echo "$*"
+  fi
+}
+
+detail_indent() {
+  if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+    indent
+  else
+    cat >/dev/null
+  fi
 }
 
 command_exists() {
@@ -257,6 +304,69 @@ float_greater_than() {
   }'
 }
 
+seconds_to_ms() {
+  awk -v seconds="$1" 'BEGIN {
+    if (seconds == "") {
+      print ""
+    } else {
+      printf "%.0f", seconds * 1000
+    }
+  }'
+}
+
+set_status() {
+  local variable_name="$1"
+  local new_status="$2"
+  local current_status="${!variable_name}"
+
+  if [[ "$current_status" == "FAIL" ]]; then
+    return
+  fi
+
+  if [[ "$new_status" == "FAIL" || "$current_status" == "" ]]; then
+    printf -v "$variable_name" '%s' "$new_status"
+    return
+  fi
+
+  if [[ "$new_status" == "WARN" && "$current_status" == "OK" ]]; then
+    printf -v "$variable_name" '%s' "$new_status"
+  fi
+}
+
+status_color() {
+  case "$1" in
+    OK|HEALTHY)
+      printf '%s' "$GREEN"
+      ;;
+    WARN|WARNING)
+      printf '%s' "$YELLOW"
+      ;;
+    FAIL|UNHEALTHY)
+      printf '%s' "$RED"
+      ;;
+    *)
+      printf '%s' "$RESET"
+      ;;
+  esac
+}
+
+overall_status() {
+  if [[ $failures -gt 0 ]]; then
+    echo "UNHEALTHY"
+  elif [[ $warnings -gt 0 ]]; then
+    echo "WARNING"
+  else
+    echo "HEALTHY"
+  fi
+}
+
+sync_mail_status() {
+  MAIL_STATUS="OK"
+  set_status MAIL_STATUS "$MX_STATUS"
+  set_status MAIL_STATUS "$SPF_STATUS"
+  set_status MAIL_STATUS "$DMARC_STATUS"
+}
+
 parse_epoch() {
   local value="$1"
   local parsed_epoch=""
@@ -266,6 +376,8 @@ parse_epoch() {
     "%Y-%m-%d %H:%M:%S"
     "%Y-%m-%d"
     "%d-%b-%Y"
+    "%b %e %H:%M:%S %Y %Z"
+    "%b %d %H:%M:%S %Y %Z"
   )
 
   if date -u -d "$value" +%s >/dev/null 2>&1; then
@@ -511,6 +623,22 @@ check_required_commands() {
         pass "$command_name bulundu"
       fi
     else
+      case "$command_name" in
+        curl)
+          set_status HTTPS_STATUS "FAIL"
+          set_status REDIRECT_STATUS "FAIL"
+          set_status RESPONSE_STATUS "FAIL"
+          ;;
+        dig)
+          set_status DNS_STATUS "FAIL"
+          set_status MX_STATUS "FAIL"
+          set_status SPF_STATUS "FAIL"
+          set_status DMARC_STATUS "FAIL"
+          ;;
+        openssl)
+          set_status SSL_STATUS "FAIL"
+          ;;
+      esac
       fail "$command_name bulunamadı"
     fi
   done
@@ -560,7 +688,7 @@ if command_exists whois; then
           pass "Domain registration expires in ${domain_days_remaining_label}"
         fi
 
-        echo "      → expires: $domain_expires_at"
+        detail "      → expires: $domain_expires_at"
       fi
     fi
   fi
@@ -576,14 +704,15 @@ if command_exists dig; then
 
   if [[ -n "$a_records" ]]; then
     pass "A $DOMAIN"
-    printf '%s\n' "$a_records" | indent
+    printf '%s\n' "$a_records" | detail_indent
   else
+    set_status DNS_STATUS "FAIL"
     fail "A $DOMAIN — IPv4 adresi bulunamadı"
   fi
 
   if [[ -n "$aaaa_records" ]]; then
     pass "AAAA $DOMAIN"
-    printf '%s\n' "$aaaa_records" | indent
+    printf '%s\n' "$aaaa_records" | detail_indent
   else
     info "AAAA $DOMAIN — IPv6 kaydı bulunamadı"
   fi
@@ -596,13 +725,14 @@ if command_exists dig; then
     pass "www.$DOMAIN çözümleniyor"
 
     if [[ -n "$www_cname_records" ]]; then
-      printf '%s\n' "$www_cname_records" | indent
+      printf '%s\n' "$www_cname_records" | detail_indent
     elif [[ -n "$www_a_records" ]]; then
-      printf '%s\n' "$www_a_records" | indent
+      printf '%s\n' "$www_a_records" | detail_indent
     else
-      printf '%s\n' "$www_aaaa_records" | indent
+      printf '%s\n' "$www_aaaa_records" | detail_indent
     fi
   else
+    set_status DNS_STATUS "FAIL"
     fail "www.$DOMAIN — DNS kaydı bulunamadı"
   fi
 fi
@@ -615,12 +745,14 @@ if command_exists nc; then
   if nc -z -w "$CONNECT_TIMEOUT_SECONDS" "$DOMAIN" 80 >/dev/null 2>&1; then
     pass "TCP $DOMAIN:80 erişilebilir"
   else
+    set_status REDIRECT_STATUS "FAIL"
     fail "TCP $DOMAIN:80 erişilemiyor"
   fi
 
   if nc -z -w "$CONNECT_TIMEOUT_SECONDS" "$DOMAIN" 443 >/dev/null 2>&1; then
     pass "TCP $DOMAIN:443 erişilebilir"
   else
+    set_status HTTPS_STATUS "FAIL"
     fail "TCP $DOMAIN:443 erişilemiyor"
   fi
 fi
@@ -633,6 +765,10 @@ if command_exists curl; then
   for url in "${urls[@]}"; do
     if ! probe_http_url "$url" "curl"; then
       error_description=$(describe_curl_error "$HTTP_CURL_STATUS" "$HTTP_CURL_ERROR")
+      set_status REDIRECT_STATUS "FAIL"
+      if [[ "$url" == https://* ]]; then
+        set_status HTTPS_STATUS "FAIL"
+      fi
       fail "$url — $error_description"
       continue
     fi
@@ -644,27 +780,38 @@ if command_exists curl; then
         pass "$url"
       fi
     else
+      set_status REDIRECT_STATUS "FAIL"
+      if [[ "$url" == https://* ]]; then
+        set_status HTTPS_STATUS "FAIL"
+      fi
       fail "$url"
     fi
 
-    echo "      → final: $HTTP_FINAL_URL"
-    echo "      → status: $HTTP_STATUS"
-    echo "      → redirects: $HTTP_REDIRECTS"
-    echo "      → connect: ${HTTP_CONNECT_TIME}s"
-    echo "      → first byte: ${HTTP_STARTTRANSFER_TIME}s"
-    echo "      → total: ${HTTP_TOTAL_TIME}s"
+    detail "      → final: $HTTP_FINAL_URL"
+    detail "      → status: $HTTP_STATUS"
+    detail "      → redirects: $HTTP_REDIRECTS"
+    detail "      → connect: ${HTTP_CONNECT_TIME}s"
+    detail "      → first byte: ${HTTP_STARTTRANSFER_TIME}s"
+    detail "      → total: ${HTTP_TOTAL_TIME}s"
 
     if [[ "$HTTP_STATUS" != "200" ]]; then
+      set_status REDIRECT_STATUS "FAIL"
+      if [[ "$url" == https://* ]]; then
+        set_status HTTPS_STATUS "FAIL"
+      fi
       fail "$url — beklenen son durum kodu 200, gelen $HTTP_STATUS"
     fi
 
     if [[ "$HTTP_FINAL_URL" != "$EXPECTED_URL" ]]; then
+      set_status REDIRECT_STATUS "FAIL"
       fail "$url — unexpected final URL, expected $EXPECTED_URL"
     fi
 
     if float_greater_than "$HTTP_TOTAL_TIME" "$VERY_SLOW_RESPONSE_SECONDS"; then
+      set_status RESPONSE_STATUS "FAIL"
       fail "$url — yanıt süresi çok yüksek: ${HTTP_TOTAL_TIME}s"
     elif float_greater_than "$HTTP_TOTAL_TIME" "$SLOW_RESPONSE_WARNING_SECONDS"; then
+      set_status RESPONSE_STATUS "WARN"
       warn "$url — yanıt süresi yüksek: ${HTTP_TOTAL_TIME}s"
     fi
   done
@@ -698,6 +845,8 @@ if command_exists curl; then
 
   if [[ $content_curl_status -ne 0 ]]; then
     error_description=$(describe_curl_error "$content_curl_status" "$content_curl_error")
+    set_status HTTPS_STATUS "FAIL"
+    set_status RESPONSE_STATUS "FAIL"
     fail "$EXPECTED_URL — içerik indirilemedi: $error_description"
   else
     IFS="|" read -r \
@@ -708,12 +857,20 @@ if command_exists curl; then
       content_total_time \
       <<< "$content_result"
 
-    echo "      → content-type: ${content_type:-bilinmiyor}"
-    echo "      → downloaded: ${content_size:-0} bytes"
+    RESPONSE_MS=$(seconds_to_ms "$content_total_time")
+    if float_greater_than "$content_total_time" "$VERY_SLOW_RESPONSE_SECONDS"; then
+      set_status RESPONSE_STATUS "FAIL"
+    elif float_greater_than "$content_total_time" "$SLOW_RESPONSE_WARNING_SECONDS"; then
+      set_status RESPONSE_STATUS "WARN"
+    fi
+
+    detail "      → content-type: ${content_type:-bilinmiyor}"
+    detail "      → downloaded: ${content_size:-0} bytes"
 
     if [[ "$content_status" == "200" ]]; then
       pass "Canonical sayfa 200 döndürüyor"
     else
+      set_status HTTPS_STATUS "FAIL"
       fail "Canonical sayfa — beklenen 200, gelen $content_status"
     fi
 
@@ -724,10 +881,12 @@ if command_exists curl; then
         pass "Canonical sayfa beklenen URL'de"
       fi
     else
+      set_status REDIRECT_STATUS "FAIL"
       fail "Canonical sayfa beklenmeyen URL'ye yönleniyor: $content_final_url"
     fi
 
     if [[ ! -s "$body_file" ]]; then
+      set_status HTTPS_STATUS "FAIL"
       fail "Yanıt gövdesi boş"
     else
       pass "Yanıt gövdesi boş değil"
@@ -736,24 +895,26 @@ if command_exists curl; then
     if [[ "$content_type" == text/html* || "$content_type" == application/xhtml+xml* ]]; then
       pass "Content-Type HTML"
     else
+      set_status HTTPS_STATUS "FAIL"
       fail "Beklenmeyen Content-Type: ${content_type:-bilinmiyor}"
     fi
 
     if grep -Eiq '<!doctype[[:space:]]+html|<html([[:space:]>])' "$body_file"; then
       pass "Yanıt geçerli bir HTML belge yapısı içeriyor"
     else
+      set_status HTTPS_STATUS "FAIL"
       fail "Yanıtta HTML belge yapısı bulunamadı"
     fi
 
     page_title=$(
-      tr '\n' ' ' < "$body_file" |
-        sed -nE 's/.*<[Tt][Ii][Tt][Ll][Ee][^>]*>([^<]*)<\/[Tt][Ii][Tt][Ll][Ee]>.*/\1/p' |
+      LC_ALL=C tr '\n' ' ' < "$body_file" |
+        LC_ALL=C sed -nE 's/.*<[Tt][Ii][Tt][Ll][Ee][^>]*>([^<]*)<\/[Tt][Ii][Tt][Ll][Ee]>.*/\1/p' |
         head -n 1
     )
 
     if [[ -n "$page_title" ]]; then
       pass "HTML title bulundu"
-      echo "      → $page_title"
+      detail "      → $page_title"
     else
       warn "HTML title bulunamadı"
     fi
@@ -762,6 +923,7 @@ if command_exists curl; then
       if grep -Fqi "$EXPECTED_HTML_PATTERN" "$body_file"; then
         pass "Beklenen içerik bulundu: $EXPECTED_HTML_PATTERN"
       else
+        set_status HTTPS_STATUS "FAIL"
         fail "Beklenen içerik bulunamadı: $EXPECTED_HTML_PATTERN"
       fi
     fi
@@ -791,12 +953,13 @@ Internal Server Error
     )
 
     if grep -Eiq "$compact_application_error_pattern" "$body_file"; then
+      set_status HTTPS_STATUS "FAIL"
       fail "HTML içinde uygulama, WordPress, PHP veya sunucu hata metni bulundu"
 
       grep -Eio "$compact_application_error_pattern" "$body_file" |
         sort -u |
         head -n 5 |
-        indent
+        detail_indent
     else
       pass "Bilinen WordPress/PHP/sunucu hata metni bulunmadı"
     fi
@@ -824,17 +987,19 @@ godaddy domain parking
     )
 
     if grep -Eiq "$compact_parked_domain_pattern" "$body_file"; then
+      set_status HTTPS_STATUS "FAIL"
       fail "Alan adı park edilmiş olabilir"
 
       grep -Eio "$compact_parked_domain_pattern" "$body_file" |
         sort -u |
         head -n 5 |
-        indent
+        detail_indent
     else
       pass "Bilinen alan adı park sayfası izi bulunmadı"
     fi
 
     if grep -Eiq 'coming soon|under construction|website is under maintenance' "$body_file"; then
+      set_status HTTPS_STATUS "WARN"
       warn "Sayfa bakım veya yakında açılacak sayfası olabilir"
     fi
   fi
@@ -870,8 +1035,8 @@ if command_exists curl; then
 
     if [[ "$llms_status" == "200" ]]; then
       pass "/llms.txt"
-      echo "      → $llms_final_url"
-      echo "      → content-type: ${llms_content_type:-bilinmiyor}"
+      detail "      → $llms_final_url"
+      detail "      → content-type: ${llms_content_type:-bilinmiyor}"
     else
       fail "/llms.txt — beklenen 200, gelen $llms_status"
     fi
@@ -887,7 +1052,7 @@ if command_exists dig; then
 
   if [[ -n "$mx_records" ]]; then
     pass "MX $DOMAIN"
-    printf '%s\n' "$mx_records" | indent
+    printf '%s\n' "$mx_records" | detail_indent
 
     mx_record_count=$(
       printf '%s\n' "$mx_records" |
@@ -905,6 +1070,7 @@ if command_exists dig; then
       info "Null MX record detected alongside other MX records"
     fi
   else
+    set_status MX_STATUS "FAIL"
     fail "MX $DOMAIN — MX kaydı bulunamadı"
   fi
 fi
@@ -930,13 +1096,15 @@ if command_exists dig; then
   )
 
   if (( spf_record_count == 0 )); then
+    set_status SPF_STATUS "FAIL"
     fail "SPF $DOMAIN — SPF TXT kaydı bulunamadı"
   elif (( spf_record_count > 1 )); then
+    set_status SPF_STATUS "FAIL"
     fail "SPF $DOMAIN — birden fazla SPF TXT kaydı bulundu"
-    printf '%s\n' "$spf_records" | indent
+    printf '%s\n' "$spf_records" | detail_indent
   else
     pass "SPF $DOMAIN"
-    printf '%s\n' "$spf_records" | indent
+    printf '%s\n' "$spf_records" | detail_indent
   fi
 fi
 }
@@ -961,11 +1129,13 @@ if command_exists dig; then
   )
 
   if (( dmarc_record_count == 0 )); then
+    set_status DMARC_STATUS "FAIL"
     fail "DMARC _dmarc.$DOMAIN — DMARC TXT kaydı bulunamadı"
-    echo "      → Cloudflare uyarısı: @${DOMAIN} adreslerinden sahte e-postaları engellemek için DMARC kaydı ekleyin"
+    detail "      → Cloudflare uyarısı: @${DOMAIN} adreslerinden sahte e-postaları engellemek için DMARC kaydı ekleyin"
   elif (( dmarc_record_count > 1 )); then
+    set_status DMARC_STATUS "FAIL"
     fail "DMARC _dmarc.$DOMAIN — birden fazla DMARC TXT kaydı bulundu"
-    printf '%s\n' "$dmarc_policy_records" | indent
+    printf '%s\n' "$dmarc_policy_records" | detail_indent
   else
     dmarc_record=$(printf '%s\n' "$dmarc_policy_records" | head -n 1)
     normalized_dmarc_record=$(printf '%s' "$dmarc_record" | tr '[:upper:]' '[:lower:]')
@@ -974,15 +1144,17 @@ if command_exists dig; then
       dmarc_policy="${BASH_REMATCH[2]}"
 
       if [[ "$dmarc_policy" == "none" ]]; then
+        set_status DMARC_STATUS "WARN"
         warn "DMARC _dmarc.$DOMAIN — policy p=none, yalnızca izleme modunda"
       else
         pass "DMARC _dmarc.$DOMAIN — policy p=$dmarc_policy"
       fi
 
-      printf '%s\n' "$dmarc_record" | indent
+      printf '%s\n' "$dmarc_record" | detail_indent
     else
+      set_status DMARC_STATUS "FAIL"
       fail "DMARC _dmarc.$DOMAIN — geçerli p= politikası bulunamadı"
-      printf '%s\n' "$dmarc_record" | indent
+      printf '%s\n' "$dmarc_record" | detail_indent
     fi
   fi
 fi
@@ -992,6 +1164,7 @@ check_mail() {
   check_mx
   check_spf
   check_dmarc
+  sync_mail_status
 }
 
 check_ssl() {
@@ -1008,6 +1181,7 @@ if command_exists openssl; then
   ssl_status=$?
 
   if [[ $ssl_status -ne 0 ]]; then
+    set_status SSL_STATUS "FAIL"
     fail "SSL $DOMAIN — sertifika zinciri veya hostname doğrulanamadı"
   else
     certificate=$(
@@ -1016,6 +1190,7 @@ if command_exists openssl; then
     )
 
     if [[ -z "$certificate" ]]; then
+      set_status SSL_STATUS "FAIL"
       fail "SSL $DOMAIN — sertifika okunamadı"
     else
       cert_subject=$(
@@ -1037,22 +1212,166 @@ if command_exists openssl; then
       )
 
       if [[ -z "$cert_expires_at" ]]; then
+        set_status SSL_STATUS "FAIL"
         fail "SSL $DOMAIN — sertifika sona erme tarihi okunamadı"
       elif ! printf '%s\n' "$certificate" |
         openssl x509 \
           -checkend "$SSL_EXPIRY_WARNING_SECONDS" \
           -noout >/dev/null 2>&1; then
+        cert_expires_epoch=$(parse_epoch "$cert_expires_at" || true)
+        if [[ -n "$cert_expires_epoch" ]]; then
+          now_epoch=$(date -u +%s)
+          SSL_DAYS_REMAINING=$(((cert_expires_epoch - now_epoch) / 86400))
+        fi
+        set_status SSL_STATUS "WARN"
         warn "SSL $DOMAIN — sertifika $SSL_EXPIRY_WARNING_DAYS gün içinde sona erecek"
       else
+        cert_expires_epoch=$(parse_epoch "$cert_expires_at" || true)
+        if [[ -n "$cert_expires_epoch" ]]; then
+          now_epoch=$(date -u +%s)
+          SSL_DAYS_REMAINING=$(((cert_expires_epoch - now_epoch) / 86400))
+        fi
         pass "SSL $DOMAIN"
       fi
 
-      echo "      → subject: $cert_subject"
-      echo "      → issuer: $cert_issuer"
-      echo "      → expires: $cert_expires_at"
+      detail "      → subject: $cert_subject"
+      detail "      → issuer: $cert_issuer"
+      detail "      → expires: $cert_expires_at"
     fi
   fi
 fi
+}
+
+format_status_token() {
+  local status="$1"
+  local color=""
+
+  color=$(status_color "$status")
+  printf '%s%s%s' "$color" "$status" "$RESET"
+}
+
+render_status_row() {
+  local label="$1"
+  local value="$2"
+  local status="$3"
+
+  if [[ "$status" == "WARN" ]]; then
+    printf '  %-12s %s    %s%s WARN%s\n' "$label" "$value" "$YELLOW" "⚠" "$RESET"
+  elif [[ "$status" == "FAIL" ]]; then
+    printf '  %-12s %s    %s%s FAIL%s\n' "$label" "$value" "$RED" "✖" "$RESET"
+  else
+    printf '  %-12s %s\n' "$label" "$value"
+  fi
+}
+
+render_simple_status_row() {
+  local label="$1"
+  local status="$2"
+
+  printf '  %-12s %s\n' "$label" "$(format_status_token "$status")"
+}
+
+render_issues() {
+  local index=0
+  local printed=0
+  local max_issues=10
+  local level=""
+  local message=""
+  local color=""
+
+  if [[ ${#ISSUE_LEVELS[@]} -eq 0 ]]; then
+    return
+  fi
+
+  echo
+  echo "Issues:"
+
+  for ((index = 0; index < ${#ISSUE_LEVELS[@]}; index++)); do
+    if (( printed >= max_issues )); then
+      printf '  ...  %d more; run with --verbose for full diagnostics\n' "$((${#ISSUE_LEVELS[@]} - printed))"
+      break
+    fi
+
+    level="${ISSUE_LEVELS[$index]}"
+    message="${ISSUE_MESSAGES[$index]}"
+    color=$(status_color "$level")
+    printf '  %s%-4s%s  %s\n' "$color" "$level" "$RESET" "$message"
+    printed=$((printed + 1))
+  done
+}
+
+render_dashboard() {
+  local status=""
+  local ssl_value=""
+  local response_value=""
+  local status_color_value=""
+
+  echo "${BOLD}SITE HEALTH${RESET}"
+  echo "────────────────────────────────────────"
+  echo "● $DOMAIN"
+
+  render_simple_status_row "HTTPS" "$HTTPS_STATUS"
+  render_simple_status_row "DNS" "$DNS_STATUS"
+
+  if [[ "$SSL_STATUS" == "FAIL" ]]; then
+    ssl_value="$(format_status_token FAIL)"
+    render_status_row "SSL" "$ssl_value" "OK"
+  elif [[ -n "$SSL_DAYS_REMAINING" ]]; then
+    render_status_row "SSL" "${SSL_DAYS_REMAINING} days" "$SSL_STATUS"
+  else
+    render_simple_status_row "SSL" "$SSL_STATUS"
+  fi
+
+  render_simple_status_row "Redirect" "$REDIRECT_STATUS"
+
+  if [[ -n "$RESPONSE_MS" ]]; then
+    response_value="${RESPONSE_MS} ms"
+    render_status_row "Response" "$response_value" "$RESPONSE_STATUS"
+  else
+    response_value="—"
+    render_status_row "Response" "$response_value" "OK"
+  fi
+
+  render_simple_status_row "Mail" "$MAIL_STATUS"
+
+  status=$(overall_status)
+  status_color_value=$(status_color "$status")
+  echo "Status: ${status_color_value}${status}${RESET}"
+
+  render_issues
+  print_forwarding_hint
+}
+
+render_mail_dashboard() {
+  local status=""
+  local status_color_value=""
+
+  echo "${BOLD}MAIL HEALTH${RESET}"
+  echo "────────────────────────────────────────"
+  echo "● $DOMAIN"
+  render_simple_status_row "MX" "$MX_STATUS"
+  render_simple_status_row "SPF" "$SPF_STATUS"
+  render_simple_status_row "DMARC" "$DMARC_STATUS"
+
+  status=$(overall_status)
+  status_color_value=$(status_color "$status")
+  echo "Status: ${status_color_value}${status}${RESET}"
+
+  render_issues
+}
+
+finish_dashboard() {
+  if [[ $MAIL_ONLY -eq 1 ]]; then
+    render_mail_dashboard
+  else
+    render_dashboard
+  fi
+
+  if [[ $failures -gt 0 ]]; then
+    exit 1
+  fi
+
+  exit 0
 }
 
 print_forwarding_hint() {
@@ -1065,12 +1384,12 @@ print_forwarding_hint() {
   if [[ $FORWARDING_AMBIGUOUS -eq 1 ]]; then
     info "Domain appears to forward to multiple URLs"
     for candidate in "${FORWARDING_CANDIDATES[@]}"; do
-      echo "      → candidate: $candidate"
+      detail "      → candidate: $candidate"
     done
-    echo "      → choose one: site-health --expected-url <url> $DOMAIN"
+    detail "      → choose one: site-health --expected-url <url> $DOMAIN"
   elif [[ -n "$FORWARDING_HINT_URL" ]]; then
     info "Domain looks forwarded to $FORWARDING_HINT_URL"
-    echo "      → suggested: site-health --expected-url $FORWARDING_HINT_URL $DOMAIN"
+    detail "      → suggested: site-health --expected-url $FORWARDING_HINT_URL $DOMAIN"
   fi
 }
 
@@ -1130,14 +1449,22 @@ check_all() {
 }
 
 if [[ $MAIL_ONLY -eq 1 ]]; then
-  print_header
+  if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+    print_header
+  fi
   check_required_commands
   check_mail
 else
   detect_forwarded_expected_url
-  print_header
+  if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+    print_header
+  fi
   check_required_commands
   check_all
 fi
 
-print_summary
+if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
+  print_summary
+else
+  finish_dashboard
+fi

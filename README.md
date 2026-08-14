@@ -28,10 +28,31 @@ Current checks include:
 
 ## Usage
 
-Run the full website/domain health check:
+Run the full website/domain health check. By default, output is a concise dashboard:
 
 ```bash
 site-health example.com
+```
+
+Example:
+
+```text
+SITE HEALTH
+────────────────────────────────────────
+● example.com
+  HTTPS        OK
+  DNS          OK
+  SSL          81 days
+  Redirect     OK
+  Response     184 ms
+  Mail         OK
+Status: HEALTHY
+```
+
+Show detailed troubleshooting diagnostics instead of the dashboard:
+
+```bash
+site-health --verbose example.com
 ```
 
 Run only mail-related DNS checks:
@@ -46,6 +67,24 @@ Mail mode checks only:
 - SPF
 - DMARC
 
+Example:
+
+```text
+MAIL HEALTH
+────────────────────────────────────────
+● example.com
+  MX           OK
+  SPF          OK
+  DMARC        WARN
+Status: WARNING
+```
+
+Show detailed mail diagnostics:
+
+```bash
+site-health --mail --verbose example.com
+```
+
 Forwarded domains are detected automatically when the final URL is unambiguous:
 
 ```bash
@@ -56,12 +95,6 @@ To strictly require a specific final URL, provide it explicitly:
 
 ```bash
 site-health --expected-url https://example.org/ example.com
-```
-
-For troubleshooting, show successful local tool checks:
-
-```bash
-site-health --verbose example.com
 ```
 
 ## Installation
