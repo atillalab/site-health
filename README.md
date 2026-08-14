@@ -38,7 +38,7 @@ Example:
 
 ```text
 SITE HEALTH
-────────────────────────────────────────
+───────────
 ● example.com
   HTTPS        OK
   DNS          OK
@@ -53,7 +53,7 @@ When a forwarded or explicit canonical URL matters, the dashboard includes it:
 
 ```text
 SITE HEALTH
-────────────────────────────────────────
+───────────
 ● example.com
   Expected     https://example.org/
   HTTPS        OK
@@ -87,7 +87,7 @@ Example:
 
 ```text
 MAIL HEALTH
-────────────────────────────────────────
+───────────
 ● example.com
   MX           OK
   SPF          OK

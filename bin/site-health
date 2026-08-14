@@ -1315,7 +1315,7 @@ render_dashboard() {
   local status_color_value=""
 
   echo "${BOLD}SITE HEALTH${RESET}"
-  echo "────────────────────────────────────────"
+  echo "───────────"
   echo "● $DOMAIN"
 
   if should_show_dashboard_expected_url; then
@@ -1359,7 +1359,7 @@ render_mail_dashboard() {
   local status_color_value=""
 
   echo "${BOLD}MAIL HEALTH${RESET}"
-  echo "────────────────────────────────────────"
+  echo "───────────"
   echo "● $DOMAIN"
   render_simple_status_row "MX" "$MX_STATUS"
   render_simple_status_row "SPF" "$SPF_STATUS"
