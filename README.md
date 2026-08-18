@@ -25,6 +25,7 @@ Current checks include:
 - SPF TXT record validation
 - DMARC TXT record validation
 - `llms.txt` availability check
+- Machine-readable JSON output for automation and monitoring
 
 ## Usage
 
@@ -112,6 +113,53 @@ To strictly require a specific final URL, provide it explicitly:
 ```bash
 site-health --expected-url https://example.org/ example.com
 ```
+
+Output a machine-readable JSON document instead of the dashboard (useful for scripts, CI, and monitoring). `--verbose` output is suppressed in JSON mode; the same exit codes apply (`0` healthy, `1` issues found):
+
+```bash
+site-health --format json example.com
+```
+
+Example:
+
+```json
+{
+  "tool": "site-health",
+  "version": "0.8",
+  "domain": "example.com",
+  "mode": "site",
+  "expected_url": "https://example.com/",
+  "forwarding": {
+    "auto_detected": false,
+    "ambiguous": false,
+    "hint_url": null,
+    "candidates": []
+  },
+  "checks": {
+    "dns": { "status": "OK", "a": ["104.20.23.154"], "aaaa": [] },
+    "https": { "status": "OK" },
+    "ssl": { "status": "OK", "days_remaining": 81, "subject": "CN=example.com" },
+    "redirect": { "status": "OK" },
+    "response": { "status": "OK", "ms": 184 },
+    "domain_registration": {
+      "status": "OK",
+      "registrar": "MarkMonitor Inc.",
+      "expires_at": "2028-09-14T04:00:00Z",
+      "days_remaining": 757
+    },
+    "mail": {
+      "status": "OK",
+      "mx": { "status": "OK", "records": ["0 ."] },
+      "spf": { "status": "OK", "records": ["v=spf1 -all"] },
+      "dmarc": { "status": "OK", "records": ["v=DMARC1;p=reject"] }
+    }
+  },
+  "issues": [],
+  "summary": { "failures": 0, "warnings": 0, "status": "HEALTHY" }
+}
+```
+
+In mail-only mode, the `checks` object contains just the `mail` block and the top-level `mode` is `"mail"`.
 
 ## Installation
 

@@ -3,26 +3,49 @@
 # Version: 0.7
 # Last updated: 2026-08-14
 
-VERSION="0.7"
+VERSION="0.8"
 
 show_usage() {
-  echo "Usage: site-health [--mail] [--verbose] [--expected-url <url>] <domain>"
+  echo "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--format <dashboard|json>] <domain>"
   echo "Example: site-health example.com"
   echo "Example: site-health --mail example.com"
   echo "Example: site-health --verbose example.com"
   echo "Example: site-health --expected-url https://example.org/ example.com"
+  echo "Example: site-health --format json example.com"
 }
 
 EXPECTED_URL_OVERRIDE=""
 EXPECTED_URL_WAS_PROVIDED=0
 MAIL_ONLY=0
 VERBOSE_OUTPUT=0
+FORMAT="dashboard"
 DOMAIN=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --verbose)
       VERBOSE_OUTPUT=1
+      shift
+      ;;
+    --format)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        echo "Error: --format requires a value." >&2
+        show_usage
+        exit 2
+      fi
+
+      FORMAT="$2"
+      shift 2
+      ;;
+    --format=*)
+      FORMAT="${1#--format=}"
+
+      if [[ -z "$FORMAT" ]]; then
+        echo "Error: --format requires a value." >&2
+        show_usage
+        exit 2
+      fi
+
       shift
       ;;
     --mail)
@@ -77,6 +100,23 @@ done
 if [[ -z "$DOMAIN" ]]; then
   show_usage
   exit 2
+fi
+
+case "$FORMAT" in
+  dashboard|text)
+    FORMAT="dashboard"
+    ;;
+  json)
+    ;;
+  *)
+    echo "Error: Unknown format: $FORMAT" >&2
+    echo "Supported formats: dashboard, json" >&2
+    exit 2
+    ;;
+esac
+
+if [[ "$FORMAT" == "json" ]]; then
+  VERBOSE_OUTPUT=0
 fi
 
 DOMAIN="${DOMAIN#http://}"
@@ -199,6 +239,19 @@ MAIL_STATUS="OK"
 MX_STATUS="OK"
 SPF_STATUS="OK"
 DMARC_STATUS="OK"
+
+DOMAIN_DAYS_REMAINING=""
+domain_registrar=""
+domain_expires_at=""
+cert_subject=""
+cert_issuer=""
+cert_expires_at=""
+
+a_records=""
+aaaa_records=""
+mx_records=""
+spf_records=""
+dmarc_policy_records=""
 
 if [[ -t 1 ]]; then
   GREEN=$'\033[32m'
@@ -1242,6 +1295,218 @@ if command_exists openssl; then
 fi
 }
 
+json_escape() {
+  local value="$1"
+  local escaped=""
+  local char=""
+  local index=0
+  local length="${#value}"
+
+  for ((index = 0; index < length; index++)); do
+    char="${value:index:1}"
+    case "$char" in
+      '"') escaped+='\"' ;;
+      '\') escaped+='\\' ;;
+      $'\t') escaped+='\t' ;;
+      $'\r') escaped+='\r' ;;
+      $'\n') escaped+='\n' ;;
+      *) escaped+="$char" ;;
+    esac
+  done
+
+  printf '%s' "$escaped"
+}
+
+json_string() {
+  printf '"%s"' "$(json_escape "$1")"
+}
+
+json_string_or_null() {
+  if [[ -z "$1" ]]; then
+    printf 'null'
+  else
+    json_string "$1"
+  fi
+}
+
+json_int_or_null() {
+  if [[ -z "$1" ]]; then
+    printf 'null'
+  else
+    printf '%s' "$1"
+  fi
+}
+
+json_bool() {
+  if [[ "$1" == "1" ]]; then
+    printf 'true'
+  else
+    printf 'false'
+  fi
+}
+
+json_array_of_strings() {
+  local item=""
+  local count=0
+
+  if (( $# == 0 )); then
+    printf '[]'
+    return
+  fi
+
+  printf '['
+  for item in "$@"; do
+    if (( count > 0 )); then
+      printf ','
+    fi
+    json_string "$item"
+    count=$((count + 1))
+  done
+  printf ']'
+}
+
+json_array_from_lines() {
+  local value="$1"
+  local line=""
+  local first=1
+
+  if [[ -z "$value" ]]; then
+    printf '[]'
+    return
+  fi
+
+  printf '['
+  while IFS= read -r line; do
+    if [[ -n "$line" ]]; then
+      if [[ $first -eq 0 ]]; then
+        printf ','
+      fi
+      json_string "$line"
+      first=0
+    fi
+  done <<< "$value"
+  printf ']'
+}
+
+json_domain_registration_status() {
+  if [[ -n "$DOMAIN_DAYS_REMAINING" ]]; then
+    if (( DOMAIN_DAYS_REMAINING < 0 || DOMAIN_DAYS_REMAINING < DOMAIN_EXPIRY_CRITICAL_DAYS )); then
+      echo "FAIL"
+    elif (( DOMAIN_DAYS_REMAINING <= DOMAIN_EXPIRY_WARNING_DAYS )); then
+      echo "WARN"
+    else
+      echo "OK"
+    fi
+  else
+    echo "SKIP"
+  fi
+}
+
+render_json_mail_block() {
+  local indent="$1"
+
+  echo "${indent}\"mail\": {"
+  echo "${indent}  \"status\": $(json_string "$MAIL_STATUS"),"
+  echo "${indent}  \"mx\": { \"status\": $(json_string "$MX_STATUS"), \"records\": $(json_array_from_lines "$mx_records") },"
+  echo "${indent}  \"spf\": { \"status\": $(json_string "$SPF_STATUS"), \"records\": $(json_array_from_lines "$spf_records") },"
+  echo "${indent}  \"dmarc\": { \"status\": $(json_string "$DMARC_STATUS"), \"records\": $(json_array_from_lines "$dmarc_policy_records") }"
+  echo "${indent}}"
+}
+
+render_json_site_checks() {
+  echo '    "dns": {'
+  echo "      \"status\": $(json_string "$DNS_STATUS"),"
+  echo "      \"a\": $(json_array_from_lines "$a_records"),"
+  echo "      \"aaaa\": $(json_array_from_lines "$aaaa_records")"
+  echo '    },'
+  echo "    \"https\": { \"status\": $(json_string "$HTTPS_STATUS") },"
+  echo '    "ssl": {'
+  echo "      \"status\": $(json_string "$SSL_STATUS"),"
+  echo "      \"days_remaining\": $(json_int_or_null "$SSL_DAYS_REMAINING"),"
+  echo "      \"subject\": $(json_string_or_null "$cert_subject"),"
+  echo "      \"issuer\": $(json_string_or_null "$cert_issuer"),"
+  echo "      \"expires_at\": $(json_string_or_null "$cert_expires_at")"
+  echo '    },'
+  echo "    \"redirect\": { \"status\": $(json_string "$REDIRECT_STATUS") },"
+  echo '    "response": {'
+  echo "      \"status\": $(json_string "$RESPONSE_STATUS"),"
+  echo "      \"ms\": $(json_int_or_null "$RESPONSE_MS")"
+  echo '    },'
+
+  if [[ -n "$domain_registrar" || -n "$domain_expires_at" || -n "$DOMAIN_DAYS_REMAINING" ]]; then
+    echo '    "domain_registration": {'
+    echo "      \"status\": $(json_string "$(json_domain_registration_status)"),"
+    echo "      \"registrar\": $(json_string_or_null "$domain_registrar"),"
+    echo "      \"expires_at\": $(json_string_or_null "$domain_expires_at"),"
+    echo "      \"days_remaining\": $(json_int_or_null "$DOMAIN_DAYS_REMAINING")"
+    echo '    },'
+  else
+    echo '    "domain_registration": null,'
+  fi
+
+  render_json_mail_block "    "
+}
+
+render_json_mail_checks() {
+  render_json_mail_block "    "
+}
+
+render_json() {
+  local index=0
+  local status=""
+
+  status=$(overall_status)
+
+  echo '{'
+  echo "  \"tool\": \"site-health\","
+  echo "  \"version\": $(json_string "$VERSION"),"
+  echo "  \"domain\": $(json_string "$DOMAIN"),"
+
+  if [[ $MAIL_ONLY -eq 1 ]]; then
+    echo '  "mode": "mail",'
+  else
+    echo '  "mode": "site",'
+    echo "  \"expected_url\": $(json_string "$EXPECTED_URL"),"
+    echo '  "forwarding": {'
+    echo "    \"auto_detected\": $(json_bool "$FORWARDING_AUTO_DETECTED"),"
+    echo "    \"ambiguous\": $(json_bool "$FORWARDING_AMBIGUOUS"),"
+    echo "    \"hint_url\": $(json_string_or_null "$FORWARDING_HINT_URL"),"
+    echo "    \"candidates\": $(json_array_of_strings "${FORWARDING_CANDIDATES[@]}")"
+    echo '  },'
+  fi
+
+  echo '  "checks": {'
+
+  if [[ $MAIL_ONLY -eq 1 ]]; then
+    render_json_mail_checks
+  else
+    render_json_site_checks
+  fi
+
+  echo '  },'
+  echo '  "issues": ['
+
+  if [[ ${#ISSUE_LEVELS[@]} -gt 0 ]]; then
+    for ((index = 0; index < ${#ISSUE_LEVELS[@]}; index++)); do
+      if (( index > 0 )); then
+        echo '    },'
+      fi
+      printf '    { "level": %s, "message": %s' \
+        "$(json_string "${ISSUE_LEVELS[$index]}")" \
+        "$(json_string "${ISSUE_MESSAGES[$index]}")"
+    done
+    echo '    }'
+  fi
+
+  echo '  ],'
+  echo '  "summary": {'
+  echo "    \"failures\": $failures,"
+  echo "    \"warnings\": $warnings,"
+  echo "    \"status\": $(json_string "$status")"
+  echo '  }'
+  echo '}'
+}
+
 format_status_token() {
   local status="$1"
   local color=""
@@ -1473,6 +1738,16 @@ else
   fi
   check_required_commands
   check_all
+fi
+
+if [[ "$FORMAT" == "json" ]]; then
+  render_json
+
+  if [[ $failures -gt 0 ]]; then
+    exit 1
+  fi
+
+  exit 0
 fi
 
 if [[ $VERBOSE_OUTPUT -eq 1 ]]; then
