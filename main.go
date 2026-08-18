@@ -10,9 +10,8 @@ import (
 	"github.com/atillalab/site-health/internal/check"
 	"github.com/atillalab/site-health/internal/domain"
 	"github.com/atillalab/site-health/internal/output"
+	"github.com/atillalab/site-health/internal/version"
 )
-
-const version = "0.8"
 
 func main() {
 	mailOnly := flag.Bool("mail", false, "Run only mail-related DNS checks")
@@ -35,7 +34,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("site-health %s\n", version)
+		fmt.Printf("site-health %s\n", version.Version)
 		os.Exit(0)
 	}
 

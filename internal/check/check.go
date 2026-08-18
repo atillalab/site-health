@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"sync"
+
+	"github.com/atillalab/site-health/internal/version"
 )
 
 type Status int
@@ -180,7 +182,7 @@ func (r *Runner) OverallStatus() string {
 func (r *Runner) buildReport(mode string) *Report {
 	return &Report{
 		Tool:        "site-health",
-		Version:     "0.8",
+		Version:     version.Version,
 		Domain:      r.Domain,
 		Mode:        mode,
 		ExpectedURL: r.ExpectedURL,
@@ -210,6 +212,9 @@ func (r *Runner) RunChecks(ctx context.Context) *Report {
 		mailResult := r.CheckMail()
 		report := r.buildReport("mail")
 		report.Checks.Mail = mailResult
+		if report.Forwarding.Candidates == nil {
+			report.Forwarding.Candidates = []string{}
+		}
 		return report
 	}
 
@@ -260,6 +265,10 @@ func (r *Runner) RunChecks(ctx context.Context) *Report {
 		Response:           responseResult,
 		DomainRegistration: domainRegResult,
 		Mail:               mailResult,
+	}
+
+	if report.Forwarding.Candidates == nil {
+		report.Forwarding.Candidates = []string{}
 	}
 
 	return report

@@ -4,6 +4,15 @@ A fast CLI for checking website and domain health.
 
 > **Status:** Go rewrite complete (v0.8)
 
+## Quick Start
+
+```bash
+site-health example.com
+site-health --verbose example.com
+site-health --mail example.com
+site-health --format json example.com
+```
+
 ## Features
 
 Zero external dependencies — stdlib only:
@@ -38,11 +47,15 @@ site-health example.com
 Example:
 
 ```text
+Site Health Check
+Domain: example.com
+Expected URL: https://example.com/
+
 SITE HEALTH
 ───────────
 ● example.com
-  HTTPS        OK
   DNS          OK
+  HTTPS        OK
   SSL          81 days
   Redirect     OK
   Response     184 ms
@@ -53,12 +66,15 @@ Status: HEALTHY
 When a forwarded or explicit canonical URL matters, the dashboard includes it:
 
 ```text
+Site Health Check
+Domain: example.com
+Expected URL: https://example.org/
+
 SITE HEALTH
 ───────────
 ● example.com
-  Expected     https://example.org/
-  HTTPS        OK
   DNS          OK
+  HTTPS        OK
   SSL          81 days
   Redirect     OK
   Response     184 ms
@@ -138,7 +154,6 @@ Example:
   "forwarding": {
     "auto_detected": false,
     "ambiguous": false,
-    "hint_url": null,
     "candidates": []
   },
   "checks": {
@@ -169,6 +184,16 @@ In mail-only mode, the `checks` object contains just the `mail` block and the to
 
 ## Installation
 
+### Install with go install
+
+```bash
+go install github.com/atillalab/site-health@latest
+```
+
+### Pre-built binary
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/atillalab/site-health/releases).
+
 ### Build from source
 
 Clone the repository and build:
@@ -181,15 +206,19 @@ go build -o site-health .
 
 The resulting binary has zero external dependencies.
 
-### Install with go install
+### Homebrew (coming soon)
+
+A Homebrew tap will be published at `atillalab/tap`. Once available, installation will be:
 
 ```bash
-go install github.com/atillalab/site-health@latest
+brew install atillalab/tap/site-health
 ```
 
-### Pre-built binary
+## Exit codes
 
-Download the latest release from [GitHub Releases](https://github.com/atillalab/site-health/releases).
+- `0` — healthy, no failures
+- `1` — one or more checks failed
+- `2` — usage error (missing domain, invalid flag, etc.)
 
 ## Development
 
