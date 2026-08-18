@@ -1,0 +1,263 @@
+package check
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"sync"
+)
+
+type Status int
+
+const (
+	OK Status = iota
+	WARN
+	FAIL
+)
+
+func (s Status) String() string {
+	switch s {
+	case WARN:
+		return "WARN"
+	case FAIL:
+		return "FAIL"
+	default:
+		return "OK"
+	}
+}
+
+func (s Status) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + s.String() + `"`), nil
+}
+
+func Escalate(current, incoming Status) Status {
+	if incoming > current {
+		return incoming
+	}
+	return current
+}
+
+type Issue struct {
+	Level   string `json:"level"`
+	Message string `json:"message"`
+}
+
+type Report struct {
+	Tool        string      `json:"tool"`
+	Version     string      `json:"version"`
+	Domain      string      `json:"domain"`
+	Mode        string      `json:"mode"`
+	ExpectedURL string      `json:"expected_url,omitempty"`
+	Forwarding  Forwarding  `json:"forwarding,omitempty"`
+	Checks      Checks      `json:"checks"`
+	Issues      []Issue     `json:"issues"`
+	Summary     Summary     `json:"summary"`
+}
+
+type Forwarding struct {
+	AutoDetected bool     `json:"auto_detected"`
+	Ambiguous    bool     `json:"ambiguous"`
+	HintURL      string   `json:"hint_url,omitempty"`
+	Candidates   []string `json:"candidates"`
+}
+
+type Checks struct {
+	DNS                *DNSResult                `json:"dns,omitempty"`
+	HTTPS              *SimpleResult             `json:"https,omitempty"`
+	SSL                *SSLResult                `json:"ssl,omitempty"`
+	Redirect           *SimpleResult             `json:"redirect,omitempty"`
+	Response           *ResponseResult           `json:"response,omitempty"`
+	DomainRegistration *DomainRegistrationResult `json:"domain_registration,omitempty"`
+	Mail               *MailResult               `json:"mail,omitempty"`
+}
+
+type Summary struct {
+	Failures int    `json:"failures"`
+	Warnings int    `json:"warnings"`
+	Status   string `json:"status"`
+}
+
+type SimpleResult struct {
+	Status Status `json:"status"`
+}
+
+type DNSResult struct {
+	Status Status   `json:"status"`
+	A      []string `json:"a"`
+	AAAA   []string `json:"aaaa"`
+}
+
+type SSLResult struct {
+	Status        Status `json:"status"`
+	DaysRemaining *int   `json:"days_remaining,omitempty"`
+	Subject       string `json:"subject,omitempty"`
+	Issuer        string `json:"issuer,omitempty"`
+	ExpiresAt     string `json:"expires_at,omitempty"`
+}
+
+type ResponseResult struct {
+	Status Status `json:"status"`
+	Ms     *int   `json:"ms,omitempty"`
+}
+
+type DomainRegistrationResult struct {
+	Status        Status `json:"status"`
+	Registrar     string `json:"registrar,omitempty"`
+	ExpiresAt     string `json:"expires_at,omitempty"`
+	DaysRemaining *int   `json:"days_remaining,omitempty"`
+}
+
+type MailResult struct {
+	Status Status      `json:"status"`
+	MX     MXResult    `json:"mx"`
+	SPF    SPFResult   `json:"spf"`
+	DMARC  DMARCResult `json:"dmarc"`
+}
+
+type MXResult struct {
+	Status  Status   `json:"status"`
+	Records []string `json:"records"`
+}
+
+type SPFResult struct {
+	Status  Status   `json:"status"`
+	Records []string `json:"records"`
+}
+
+type DMARCResult struct {
+	Status  Status   `json:"status"`
+	Records []string `json:"records"`
+}
+
+type Runner struct {
+	Domain      string
+	ExpectedURL string
+	MailOnly    bool
+	Verbose     bool
+
+	ForwardingAutoDetected bool
+	ForwardingAmbiguous    bool
+	ForwardingHintURL      string
+	ForwardingCandidates   []string
+
+	mu        sync.Mutex
+	issues    []Issue
+	failCount int
+	warnCount int
+}
+
+func (r *Runner) Fail(msg string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.issues = append(r.issues, Issue{Level: "FAIL", Message: msg})
+	r.failCount++
+}
+
+func (r *Runner) Warn(msg string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.issues = append(r.issues, Issue{Level: "WARN", Message: msg})
+	r.warnCount++
+}
+
+func (r *Runner) Verbosef(format string, args ...any) {
+	if r.Verbose {
+		fmt.Fprintf(os.Stderr, format, args...)
+	}
+}
+
+func (r *Runner) OverallStatus() string {
+	if r.failCount > 0 {
+		return "UNHEALTHY"
+	}
+	if r.warnCount > 0 {
+		return "WARNING"
+	}
+	return "HEALTHY"
+}
+
+func (r *Runner) buildReport(mode string) *Report {
+	return &Report{
+		Tool:        "site-health",
+		Version:     "0.8",
+		Domain:      r.Domain,
+		Mode:        mode,
+		ExpectedURL: r.ExpectedURL,
+		Forwarding: Forwarding{
+			AutoDetected: r.ForwardingAutoDetected,
+			Ambiguous:    r.ForwardingAmbiguous,
+			HintURL:      r.ForwardingHintURL,
+			Candidates:   r.ForwardingCandidates,
+		},
+		Issues: r.issues,
+		Summary: Summary{
+			Failures: r.failCount,
+			Warnings: r.warnCount,
+			Status:   r.OverallStatus(),
+		},
+	}
+}
+
+func (r *Runner) RunChecks(ctx context.Context) *Report {
+	r.mu.Lock()
+	r.issues = nil
+	r.failCount = 0
+	r.warnCount = 0
+	r.mu.Unlock()
+
+	if r.MailOnly {
+		mailResult := r.CheckMail()
+		report := r.buildReport("mail")
+		report.Checks.Mail = mailResult
+		return report
+	}
+
+	var (
+		wg              sync.WaitGroup
+		dnsResult       *DNSResult
+		sslResult       *SSLResult
+		domainRegResult *DomainRegistrationResult
+		mailResult      *MailResult
+		redirectStatus  Status
+		httpsStatus     Status
+		responseStatus  Status
+		responseMs      *int
+	)
+
+	run := func(fn func()) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fn()
+		}()
+	}
+
+	run(func() { dnsResult = r.CheckDNS() })
+	run(func() {
+		redirectStatus, httpsStatus, responseStatus, responseMs = r.CheckHTTP()
+	})
+	run(func() { sslResult = r.CheckSSL() })
+	run(func() { domainRegResult = r.CheckDomainRegistration() })
+	run(func() { mailResult = r.CheckMail() })
+	run(func() { r.CheckContent() })
+	run(func() { r.CheckLLMs() })
+
+	wg.Wait()
+
+	redirectResult := &SimpleResult{Status: redirectStatus}
+	httpsResult := &SimpleResult{Status: httpsStatus}
+	responseResult := &ResponseResult{Status: responseStatus, Ms: responseMs}
+
+	report := r.buildReport("site")
+	report.Checks = Checks{
+		DNS:                dnsResult,
+		HTTPS:              httpsResult,
+		SSL:                sslResult,
+		Redirect:           redirectResult,
+		Response:           responseResult,
+		DomainRegistration: domainRegResult,
+		Mail:               mailResult,
+	}
+
+	return report
+}

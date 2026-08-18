@@ -2,11 +2,11 @@
 
 A fast CLI for checking website and domain health.
 
-> **Status:** 🚧 Early development (Bash prototype)
+> **Status:** Go rewrite complete (v0.8)
 
 ## Features
 
-Current checks include:
+Zero external dependencies — stdlib only:
 
 - Domain registration expiry
 - Registrar lookup
@@ -163,47 +163,47 @@ In mail-only mode, the `checks` object contains just the `mail` block and the to
 
 ## Installation
 
-Clone the repository:
+### Build from source
+
+Clone the repository and build:
 
 ```bash
 git clone https://github.com/atillalab/site-health.git
-```
-
-Create a symlink in a directory included in your `PATH`:
-
-```bash
-mkdir -p ~/.local/bin
-ln -s "$(pwd)/site-health/bin/site-health" ~/.local/bin/site-health
-```
-
-Add `~/.local/bin` to your `PATH` if necessary:
-
-```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-Verify the installation:
-
-```bash
-site-health example.com
-```
-
-To update the tool later:
-
-```bash
 cd site-health
-git pull
+go build -o site-health .
 ```
 
-## Roadmap
+The resulting binary has zero external dependencies.
 
-- Rewrite as a standalone Go CLI
-- JSON output
-- CSV output
-- Parallel scanning
-- Configuration file support
-- HTML reports
+### Install with go install
+
+```bash
+go install github.com/atillalab/site-health@latest
+```
+
+### Pre-built binary
+
+Download the latest release from [GitHub Releases](https://github.com/atillalab/site-health/releases).
+
+## Development
+
+### Run tests
+
+```bash
+go test ./...
+```
+
+### Build
+
+```bash
+go build -o site-health .
+```
+
+### Vet
+
+```bash
+go vet ./...
+```
 
 ## License
 

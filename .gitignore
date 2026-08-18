@@ -1,3 +1,6 @@
 # macOS Finder metadata
 .DS_Store
 **/.DS_Store
+
+# Binaries
+bin/site-health-go
