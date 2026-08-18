@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# File: bin/site-health
+# File: bin/site-health.sh
 # Version: 0.7
 # Last updated: 2026-08-14
 
