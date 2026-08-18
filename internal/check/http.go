@@ -382,7 +382,7 @@ func (r *Runner) CheckLLMs() {
 	resp, err := client.Get(u)
 	if err != nil {
 		errMsg := describeError(err)
-		r.Fail(fmt.Sprintf("/llms.txt — %s", errMsg))
+		r.Warn(fmt.Sprintf("/llms.txt — %s", errMsg))
 		return
 	}
 	defer resp.Body.Close()
@@ -392,6 +392,6 @@ func (r *Runner) CheckLLMs() {
 		r.Verbosef("      → %s\n", resp.Request.URL.String())
 		r.Verbosef("      → content-type: %s\n", resp.Header.Get("Content-Type"))
 	} else {
-		r.Fail(fmt.Sprintf("/llms.txt — expected 200, got %d", resp.StatusCode))
+		r.Warn(fmt.Sprintf("/llms.txt — expected 200, got %d", resp.StatusCode))
 	}
 }
