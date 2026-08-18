@@ -24,7 +24,7 @@ Zero external dependencies — stdlib only:
 - MX record lookup, including Null MX recognition
 - SPF TXT record validation
 - DMARC TXT record validation
-- `llms.txt` availability check
+- Optional `/llms.txt` availability check (skippable with `--skip-llms-txt`)
 - Machine-readable JSON output for automation and monitoring
 
 ## Usage
@@ -100,6 +100,12 @@ Show detailed mail diagnostics:
 
 ```bash
 site-health --mail --verbose example.com
+```
+
+Skip the optional `/llms.txt` check:
+
+```bash
+site-health --skip-llms-txt example.com
 ```
 
 Forwarded domains are detected automatically when the final URL is unambiguous:

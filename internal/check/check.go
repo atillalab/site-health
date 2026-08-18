@@ -134,6 +134,7 @@ type Runner struct {
 	ExpectedURL string
 	MailOnly    bool
 	Verbose     bool
+	SkipLLMs    bool
 
 	ForwardingAutoDetected bool
 	ForwardingAmbiguous    bool
@@ -240,7 +241,9 @@ func (r *Runner) RunChecks(ctx context.Context) *Report {
 	run(func() { domainRegResult = r.CheckDomainRegistration() })
 	run(func() { mailResult = r.CheckMail() })
 	run(func() { r.CheckContent() })
-	run(func() { r.CheckLLMs() })
+	if !r.SkipLLMs {
+		run(func() { r.CheckLLMs() })
+	}
 
 	wg.Wait()
 

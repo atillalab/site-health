@@ -19,13 +19,15 @@ func main() {
 	verbose := flag.Bool("verbose", false, "Show detailed troubleshooting diagnostics")
 	format := flag.String("format", "dashboard", "Output format: dashboard or json")
 	expectedURL := flag.String("expected-url", "", "Expected final URL after redirects")
+	skipLLMs := flag.Bool("skip-llms-txt", false, "Skip the optional /llms.txt check")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--format <dashboard|json>] [--version] <domain>\n")
+		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--skip-llms-txt] [--format <dashboard|json>] [--version] <domain>\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --verbose example.com\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health --skip-llms-txt example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --expected-url https://example.org/ example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --format json example.com\n")
 	}
@@ -69,6 +71,7 @@ func main() {
 		Domain:   domainName,
 		MailOnly: *mailOnly,
 		Verbose:  *verbose,
+		SkipLLMs: *skipLLMs,
 	}
 
 	if *expectedURL != "" {
