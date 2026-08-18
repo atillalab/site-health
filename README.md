@@ -184,6 +184,14 @@ In mail-only mode, the `checks` object contains just the `mail` block and the to
 
 ## Installation
 
+### Homebrew
+
+Preferred installation method on macOS:
+
+```bash
+brew install atillalab/tap/site-health
+```
+
 ### Install with go install
 
 ```bash
@@ -205,14 +213,6 @@ go build -o site-health .
 ```
 
 The resulting binary has zero external dependencies.
-
-### Homebrew (coming soon)
-
-A Homebrew tap will be published at `atillalab/tap`. Once available, installation will be:
-
-```bash
-brew install atillalab/tap/site-health
-```
 
 ## Exit codes
 
