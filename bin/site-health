@@ -6,7 +6,7 @@
 VERSION="0.8"
 
 show_usage() {
-  echo "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--format <dashboard|json>] <domain>"
+  echo "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--format <dashboard|json>] [--version] <domain>"
   echo "Example: site-health example.com"
   echo "Example: site-health --mail example.com"
   echo "Example: site-health --verbose example.com"
@@ -74,6 +74,10 @@ while [[ $# -gt 0 ]]; do
       fi
 
       shift
+      ;;
+    -v|--version)
+      echo "site-health $VERSION"
+      exit 0
       ;;
     -h|--help)
       show_usage
