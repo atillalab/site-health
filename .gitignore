@@ -3,4 +3,4 @@
 **/.DS_Store
 
 # Binaries
-bin/site-health-go
+bin/site-health
