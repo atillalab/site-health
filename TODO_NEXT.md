@@ -1,5 +1,9 @@
 # TO DO Next: `www.example.com` Input Handling
 
+## Status
+
+Fixed in `v0.9.1`. `domain.Normalize()` now strips a leading `www.` prefix, so `site-health www.example.com` behaves identically to `site-health example.com`.
+
 ## Problem
 
 Passing a domain that already starts with `www.` causes the tool to treat `www.example.com` as if it were the apex domain. This produces a cascade of false failures because the checks are designed for apex/root domains.
