@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
+	"github.com/atillalab/site-health/internal/domain"
 )
 
 func (r *Runner) CheckDNS() *DNSResult {
@@ -43,20 +45,22 @@ func (r *Runner) CheckDNS() *DNSResult {
 		}
 	}
 
-	www := "www." + r.Domain
-	wwwCNAME, errCNAME := net.LookupCNAME(www)
-	wwwIPs, errIP := net.DefaultResolver.LookupIPAddr(context.Background(), www)
+	if !domain.IsSubdomain(r.Domain) {
+		www := "www." + r.Domain
+		wwwCNAME, errCNAME := net.LookupCNAME(www)
+		wwwIPs, errIP := net.DefaultResolver.LookupIPAddr(context.Background(), www)
 
-	if errCNAME == nil || errIP == nil {
-		r.Verbosef("\033[32mPASS\033[0m  www.%s resolves\n", r.Domain)
-		if errCNAME == nil {
-			r.Verbosef("      → %s\n", wwwCNAME)
+		if errCNAME == nil || errIP == nil {
+			r.Verbosef("\033[32mPASS\033[0m  www.%s resolves\n", r.Domain)
+			if errCNAME == nil {
+				r.Verbosef("      → %s\n", wwwCNAME)
+			}
+		} else {
+			result.Status = FAIL
+			r.Fail(fmt.Sprintf("DNS www.%s — no DNS record found", r.Domain))
 		}
-	} else {
-		result.Status = FAIL
-		r.Fail(fmt.Sprintf("DNS www.%s — no DNS record found", r.Domain))
+		_ = wwwIPs
 	}
-	_ = wwwIPs
 
 	return result
 }
@@ -66,10 +70,15 @@ func (r *Runner) CheckMX() MXResult {
 
 	r.Verbosef("\n\033[1m== MX ==\033[0m\n")
 
-	mxRecords, err := net.LookupMX(r.Domain)
+	mailDomain := r.effectiveMailDomain()
+	if mailDomain != r.Domain {
+		r.Verbosef("\033[36mINFO\033[0m  subdomain detected; checking MX on apex domain %s\n", mailDomain)
+	}
+
+	mxRecords, err := net.LookupMX(mailDomain)
 	if err != nil || len(mxRecords) == 0 {
 		result.Status = FAIL
-		r.Fail(fmt.Sprintf("MX %s — no MX record found", r.Domain))
+		r.Fail(fmt.Sprintf("MX %s — no MX record found", mailDomain))
 		return result
 	}
 
@@ -88,7 +97,7 @@ func (r *Runner) CheckMX() MXResult {
 		r.Verbosef("\033[36mINFO\033[0m  Null MX record detected alongside other MX records\n")
 	}
 
-	r.Verbosef("\033[32mPASS\033[0m  MX %s\n", r.Domain)
+	r.Verbosef("\033[32mPASS\033[0m  MX %s\n", mailDomain)
 	for _, rec := range result.Records {
 		r.Verbosef("      → %s\n", rec)
 	}
@@ -101,7 +110,12 @@ func (r *Runner) CheckSPF() SPFResult {
 
 	r.Verbosef("\n\033[1m== SPF ==\033[0m\n")
 
-	txtRecords, err := net.LookupTXT(r.Domain)
+	mailDomain := r.effectiveMailDomain()
+	if mailDomain != r.Domain {
+		r.Verbosef("\033[36mINFO\033[0m  subdomain detected; checking SPF on apex domain %s\n", mailDomain)
+	}
+
+	txtRecords, err := net.LookupTXT(mailDomain)
 	if err != nil {
 		txtRecords = nil
 	}
@@ -118,15 +132,15 @@ func (r *Runner) CheckSPF() SPFResult {
 
 	if spfCount == 0 {
 		result.Status = FAIL
-		r.Fail(fmt.Sprintf("SPF %s — no SPF TXT record found", r.Domain))
+		r.Fail(fmt.Sprintf("SPF %s — no SPF TXT record found", mailDomain))
 	} else if spfCount > 1 {
 		result.Status = FAIL
-		r.Fail(fmt.Sprintf("SPF %s — multiple SPF TXT records found", r.Domain))
+		r.Fail(fmt.Sprintf("SPF %s — multiple SPF TXT records found", mailDomain))
 		for _, rec := range result.Records {
 			r.Verbosef("      → %s\n", rec)
 		}
 	} else {
-		r.Verbosef("\033[32mPASS\033[0m  SPF %s\n", r.Domain)
+		r.Verbosef("\033[32mPASS\033[0m  SPF %s\n", mailDomain)
 		for _, rec := range result.Records {
 			r.Verbosef("      → %s\n", rec)
 		}
@@ -140,8 +154,13 @@ func (r *Runner) CheckDMARC() DMARCResult {
 
 	r.Verbosef("\n\033[1m== DMARC ==\033[0m\n")
 
-	domain := "_dmarc." + r.Domain
-	txtRecords, err := net.LookupTXT(domain)
+	mailDomain := r.effectiveMailDomain()
+	if mailDomain != r.Domain {
+		r.Verbosef("\033[36mINFO\033[0m  subdomain detected; checking DMARC on apex domain %s\n", mailDomain)
+	}
+
+	dmarcDomain := "_dmarc." + mailDomain
+	txtRecords, err := net.LookupTXT(dmarcDomain)
 	if err != nil {
 		txtRecords = nil
 	}
@@ -158,11 +177,11 @@ func (r *Runner) CheckDMARC() DMARCResult {
 
 	if dmarcCount == 0 {
 		result.Status = FAIL
-		r.Fail(fmt.Sprintf("DMARC %s — no DMARC TXT record found", domain))
-		r.Verbosef("      → Add a DMARC record to prevent spoofed emails from @%s\n", r.Domain)
+		r.Fail(fmt.Sprintf("DMARC %s — no DMARC TXT record found", dmarcDomain))
+		r.Verbosef("      → Add a DMARC record to prevent spoofed emails from @%s\n", mailDomain)
 	} else if dmarcCount > 1 {
 		result.Status = FAIL
-		r.Fail(fmt.Sprintf("DMARC %s — multiple DMARC TXT records found", domain))
+		r.Fail(fmt.Sprintf("DMARC %s — multiple DMARC TXT records found", dmarcDomain))
 		for _, rec := range result.Records {
 			r.Verbosef("      → %s\n", rec)
 		}
@@ -182,12 +201,12 @@ func (r *Runner) CheckDMARC() DMARCResult {
 		switch policy {
 		case "none":
 			result.Status = WARN
-			r.Warn(fmt.Sprintf("DMARC %s — policy p=none, monitoring only", domain))
+			r.Warn(fmt.Sprintf("DMARC %s — policy p=none, monitoring only", dmarcDomain))
 		case "quarantine", "reject":
-			r.Verbosef("\033[32mPASS\033[0m  DMARC %s — policy p=%s\n", domain, policy)
+			r.Verbosef("\033[32mPASS\033[0m  DMARC %s — policy p=%s\n", dmarcDomain, policy)
 		default:
 			result.Status = FAIL
-			r.Fail(fmt.Sprintf("DMARC %s — no valid p= policy found", domain))
+			r.Fail(fmt.Sprintf("DMARC %s — no valid p= policy found", dmarcDomain))
 		}
 
 		for _, rec := range result.Records {

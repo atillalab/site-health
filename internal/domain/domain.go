@@ -59,3 +59,30 @@ func IsSameSiteHost(host, domain string) bool {
 		host == apex ||
 		host == "www."+apex
 }
+
+// IsSubdomain reports whether domain is a host below an apex domain
+// (e.g. "sub.example.com"). The synthetic "www.example.com" prefix is
+// treated as an alias of the apex domain, not a subdomain.
+func IsSubdomain(domain string) bool {
+	d := strings.ToLower(strings.TrimRight(domain, "."))
+	d = strings.TrimPrefix(d, "www.")
+	parts := strings.Split(d, ".")
+	return len(parts) > 2
+}
+
+// ApexDomain returns the registered apex domain for the given host using a
+// simple last-two-label heuristic. It strips a leading "www." when present.
+// Examples:
+//   - "example.com" -> "example.com"
+//   - "www.example.com" -> "example.com"
+//   - "sub.example.com" -> "example.com"
+//   - "a.b.example.co.uk" -> "example.co.uk" (best-effort)
+func ApexDomain(domain string) string {
+	d := strings.ToLower(strings.TrimRight(domain, "."))
+	d = strings.TrimPrefix(d, "www.")
+	parts := strings.Split(d, ".")
+	if len(parts) < 2 {
+		return d
+	}
+	return strings.Join(parts[len(parts)-2:], ".")
+}

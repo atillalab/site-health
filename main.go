@@ -123,11 +123,19 @@ func detectForwarding(ctx context.Context, runner *check.Runner) {
 
 	runner.Verbosef("\n\033[1m== Detecting Forwarding ==\033[0m\n")
 
-	urls := []string{
-		"http://" + runner.Domain,
-		"http://www." + runner.Domain,
-		"https://www." + runner.Domain,
-		"https://" + runner.Domain,
+	var urls []string
+	if domain.IsSubdomain(runner.Domain) {
+		urls = []string{
+			"http://" + runner.Domain,
+			"https://" + runner.Domain,
+		}
+	} else {
+		urls = []string{
+			"http://" + runner.Domain,
+			"http://www." + runner.Domain,
+			"https://www." + runner.Domain,
+			"https://" + runner.Domain,
+		}
 	}
 
 	type candidate struct {

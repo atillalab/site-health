@@ -108,3 +108,49 @@ func TestIsSameSiteHost(t *testing.T) {
 		})
 	}
 }
+
+func TestIsSubdomain(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"example.com", false},
+		{"www.example.com", false},
+		{"sub.example.com", true},
+		{"www.sub.example.com", true},
+		{"a.b.c.example.com", true},
+		{"example.com.", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := IsSubdomain(tt.input)
+			if result != tt.expected {
+				t.Errorf("IsSubdomain(%q) = %v, want %v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestApexDomain(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"example.com", "example.com"},
+		{"www.example.com", "example.com"},
+		{"sub.example.com", "example.com"},
+		{"www.sub.example.com", "example.com"},
+		{"a.b.c.example.com", "example.com"},
+		{"example.com.", "example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := ApexDomain(tt.input)
+			if result != tt.expected {
+				t.Errorf("ApexDomain(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}

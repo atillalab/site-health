@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/atillalab/site-health/internal/domain"
 )
 
 const whoisTimeout = 10 * time.Second
@@ -169,7 +171,13 @@ func (r *Runner) CheckDomainRegistration() *DomainRegistrationResult {
 
 	r.Verbosef("\n\033[1m== Domain Registration ==\033[0m\n")
 
-	tld := getTLDDomain(r.Domain)
+	whoisDomain := r.Domain
+	if domain.IsSubdomain(r.Domain) {
+		whoisDomain = domain.ApexDomain(r.Domain)
+		r.Verbosef("\033[36mINFO\033[0m  subdomain detected; checking registration of apex domain %s\n", whoisDomain)
+	}
+
+	tld := getTLDDomain(whoisDomain)
 	if tld == "" {
 		result.Status = FAIL
 		r.Fail("could not determine TLD for domain")
@@ -183,7 +191,7 @@ func (r *Runner) CheckDomainRegistration() *DomainRegistrationResult {
 		return result
 	}
 
-	output, err := queryWhois(server, r.Domain)
+	output, err := queryWhois(server, whoisDomain)
 	if err != nil {
 		result.Status = FAIL
 		r.Fail(fmt.Sprintf("domain registration lookup failed: %s", err))

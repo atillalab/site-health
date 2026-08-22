@@ -61,11 +61,19 @@ func (r *Runner) CheckHTTP() (redirectStatus, httpsStatus, responseStatus Status
 
 	r.Verbosef("\n\033[1m== HTTP and Redirects ==\033[0m\n")
 
-	urls := []string{
-		"http://" + r.Domain,
-		"http://www." + r.Domain,
-		"https://www." + r.Domain,
-		"https://" + r.Domain,
+	var urls []string
+	if domain.IsSubdomain(r.Domain) {
+		urls = []string{
+			"http://" + r.Domain,
+			"https://" + r.Domain,
+		}
+	} else {
+		urls = []string{
+			"http://" + r.Domain,
+			"http://www." + r.Domain,
+			"https://www." + r.Domain,
+			"https://" + r.Domain,
+		}
 	}
 
 	for _, u := range urls {

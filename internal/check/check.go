@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/atillalab/site-health/internal/domain"
 	"github.com/atillalab/site-health/internal/version"
 )
 
@@ -169,6 +170,16 @@ func (r *Runner) Verbosef(format string, args ...any) {
 	}
 }
 
+// effectiveMailDomain returns the domain against which mail records (MX,
+// SPF, DMARC) should be evaluated. When running in mail-only mode against a
+// subdomain, the apex domain is used because mail policy normally lives there.
+func (r *Runner) effectiveMailDomain() string {
+	if r.MailOnly && domain.IsSubdomain(r.Domain) {
+		return domain.ApexDomain(r.Domain)
+	}
+	return r.Domain
+}
+
 func (r *Runner) OverallStatus() string {
 	if r.failCount > 0 {
 		return "UNHEALTHY"
@@ -244,7 +255,12 @@ func (r *Runner) RunChecks(ctx context.Context) *Report {
 	})
 	run(func() { sslResult = r.CheckSSL() })
 	run(func() { domainRegResult = r.CheckDomainRegistration() })
-	run(func() { mailResult = r.CheckMail() })
+	if !domain.IsSubdomain(r.Domain) {
+		run(func() { mailResult = r.CheckMail() })
+	} else {
+		r.Verbosef("\n\033[1m== Mail ==\033[0m\n")
+		r.Verbosef("\033[36mINFO\033[0m  subdomain detected; skipping mail checks in site mode\n")
+	}
 	run(func() { r.CheckContent() })
 	if !r.SkipLLMs {
 		run(func() { r.CheckLLMs() })
