@@ -11,7 +11,7 @@ func TestNormalize(t *testing.T) {
 	}{
 		{"example.com", "example.com"},
 		{"Example.Com", "example.com"},
-		{"www.example.com", "www.example.com"},
+		{"www.example.com", "example.com"},
 		{"http://example.com", "example.com"},
 		{"https://example.com", "example.com"},
 		{"https://example.com/", "example.com"},
@@ -20,7 +20,7 @@ func TestNormalize(t *testing.T) {
 		{"https://example.com.", "example.com"},
 		{"https://example.com./", "example.com"},
 		{"HTTPS://EXAMPLE.COM", "example.com"},
-		{"http://www.example.com/path/to/page", "www.example.com"},
+		{"http://www.example.com/path/to/page", "example.com"},
 	}
 
 	for _, tt := range tests {

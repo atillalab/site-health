@@ -16,6 +16,7 @@ func Normalize(raw string) string {
 	s = strings.TrimRight(s, ".")
 	s = strings.SplitN(s, "/", 2)[0]
 	s = strings.SplitN(s, ":", 2)[0]
+	s = strings.TrimPrefix(s, "www.")
 	return s
 }
 
