@@ -46,15 +46,15 @@ type Issue struct {
 }
 
 type Report struct {
-	Tool        string      `json:"tool"`
-	Version     string      `json:"version"`
-	Domain      string      `json:"domain"`
-	Mode        string      `json:"mode"`
-	ExpectedURL string      `json:"expected_url,omitempty"`
-	Forwarding  Forwarding  `json:"forwarding,omitempty"`
-	Checks      Checks      `json:"checks"`
-	Issues      []Issue     `json:"issues"`
-	Summary     Summary     `json:"summary"`
+	Tool        string     `json:"tool"`
+	Version     string     `json:"version"`
+	Domain      string     `json:"domain"`
+	Mode        string     `json:"mode"`
+	ExpectedURL string     `json:"expected_url,omitempty"`
+	Forwarding  Forwarding `json:"forwarding,omitempty"`
+	Checks      Checks     `json:"checks"`
+	Issues      []Issue    `json:"issues"`
+	Summary     Summary    `json:"summary"`
 }
 
 type Forwarding struct {
@@ -137,6 +137,7 @@ type Runner struct {
 	ExpectedURL string
 	MailOnly    bool
 	Verbose     bool
+	SkipMail    bool
 	SkipLLMs    bool
 
 	ForwardingAutoDetected bool
@@ -188,6 +189,10 @@ func (r *Runner) OverallStatus() string {
 		return "WARNING"
 	}
 	return "HEALTHY"
+}
+
+func (r *Runner) shouldRunMailChecks() bool {
+	return !r.SkipMail && !domain.IsSubdomain(r.Domain)
 }
 
 func (r *Runner) buildReport(mode string) *Report {
@@ -255,8 +260,11 @@ func (r *Runner) RunChecks(ctx context.Context) *Report {
 	})
 	run(func() { sslResult = r.CheckSSL() })
 	run(func() { domainRegResult = r.CheckDomainRegistration() })
-	if !domain.IsSubdomain(r.Domain) {
+	if r.shouldRunMailChecks() {
 		run(func() { mailResult = r.CheckMail() })
+	} else if r.SkipMail {
+		r.Verbosef("\n\033[1m== Mail ==\033[0m\n")
+		r.Verbosef("\033[36mINFO\033[0m  mail checks skipped by --skip-mail\n")
 	} else {
 		r.Verbosef("\n\033[1m== Mail ==\033[0m\n")
 		r.Verbosef("\033[36mINFO\033[0m  subdomain detected; skipping mail checks in site mode\n")

@@ -128,6 +128,39 @@ func TestRunnerOverallStatus(t *testing.T) {
 	}
 }
 
+func TestRunnerShouldRunMailChecks(t *testing.T) {
+	tests := []struct {
+		name     string
+		runner   Runner
+		expected bool
+	}{
+		{
+			name:     "apex domain",
+			runner:   Runner{Domain: "example.com"},
+			expected: true,
+		},
+		{
+			name:     "skip mail",
+			runner:   Runner{Domain: "example.com", SkipMail: true},
+			expected: false,
+		},
+		{
+			name:     "subdomain",
+			runner:   Runner{Domain: "sub.example.com"},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.runner.shouldRunMailChecks()
+			if result != tt.expected {
+				t.Errorf("shouldRunMailChecks() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestRunnerBuildReport(t *testing.T) {
 	r := &Runner{
 		Domain:      "example.com",

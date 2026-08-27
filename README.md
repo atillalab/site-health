@@ -2,7 +2,7 @@
 
 A fast CLI for checking website and domain health.
 
-> **Status:** Go rewrite complete (v0.8)
+> **Status:** Go rewrite complete (v0.9.2)
 
 ## Quick Start
 
@@ -10,6 +10,7 @@ A fast CLI for checking website and domain health.
 site-health example.com
 site-health --verbose example.com
 site-health --mail example.com
+site-health --skip-mail example.com
 site-health --format json example.com
 ```
 
@@ -33,6 +34,7 @@ Zero external dependencies — stdlib only:
 - MX record lookup, including Null MX recognition
 - SPF TXT record validation
 - DMARC TXT record validation
+- Mail checks skippable in site mode with `--skip-mail`
 - Optional `/llms.txt` availability check (skippable with `--skip-llms-txt`)
 - Machine-readable JSON output for automation and monitoring
 
@@ -118,6 +120,14 @@ Show detailed mail diagnostics:
 site-health --mail --verbose example.com
 ```
 
+Skip mail-related DNS checks in a full site health run:
+
+```bash
+site-health --skip-mail example.com
+```
+
+This skips MX, SPF, and DMARC checks when mail health is outside the monitoring scope. For domains you control that deliberately do not send or receive mail, explicit no-mail DNS policy is still preferred: Null MX, SPF `-all`, and DMARC `p=reject`.
+
 Skip the optional `/llms.txt` check:
 
 ```bash
@@ -147,7 +157,7 @@ Example:
 ```json
 {
   "tool": "site-health",
-  "version": "0.8",
+  "version": "0.9.2",
   "domain": "example.com",
   "mode": "site",
   "expected_url": "https://example.com/",
@@ -180,7 +190,7 @@ Example:
 }
 ```
 
-In mail-only mode, the `checks` object contains just the `mail` block and the top-level `mode` is `"mail"`.
+In mail-only mode, the `checks` object contains just the `mail` block and the top-level `mode` is `"mail"`. When mail checks are skipped with `--skip-mail`, the `mail` block is omitted.
 
 ## Installation
 
