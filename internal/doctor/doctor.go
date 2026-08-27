@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -102,6 +103,7 @@ func (c *Checker) Run(ctx context.Context) *Report {
 	c.checkLatestVersion(ctx, report)
 	c.checkSystemTime(report)
 	c.checkConfigFile(report)
+	c.checkEnvVars(report)
 	c.checkDNS(ctx, report)
 	c.checkHTTPS(ctx, report)
 	c.checkWHOIS(ctx, report)
@@ -324,6 +326,47 @@ func (c *Checker) checkConfigFile(report *Report) {
 		Name:   "Config file",
 		Status: StatusOK,
 		Value:  path,
+	})
+}
+
+func (c *Checker) checkEnvVars(report *Report) {
+	var set []string
+	var warnings []string
+
+	for _, ev := range config.SupportedEnvVars() {
+		v, ok := os.LookupEnv(ev.Name)
+		if !ok {
+			continue
+		}
+		set = append(set, fmt.Sprintf("%s=%s", ev.Name, v))
+		if ev.Kind == "bool" {
+			if _, err := strconv.ParseBool(v); err != nil {
+				warnings = append(warnings, fmt.Sprintf("%s=%q is not a valid boolean", ev.Name, v))
+			}
+		}
+	}
+
+	status := StatusOK
+	value := "none set"
+	detail := ""
+
+	if len(set) > 0 {
+		value = fmt.Sprintf("%d set", len(set))
+		detail = strings.Join(set, ", ")
+	}
+	if len(warnings) > 0 {
+		status = StatusWarn
+		if detail != "" {
+			detail += "; "
+		}
+		detail += strings.Join(warnings, "; ")
+	}
+
+	report.Items = append(report.Items, Item{
+		Name:   "Env vars",
+		Status: status,
+		Value:  value,
+		Detail: detail,
 	})
 }
 

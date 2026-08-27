@@ -2,7 +2,7 @@
 
 A fast CLI for checking website and domain health.
 
-> **Status:** Go rewrite complete (v0.12.0)
+> **Status:** Go rewrite complete (v0.13.0)
 
 ## Quick Start
 
@@ -192,7 +192,7 @@ Example:
 ```json
 {
   "tool": "site-health",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "domain": "example.com",
   "mode": "site",
   "expected_host": "example.com",
@@ -240,8 +240,8 @@ site-health doctor
 ──────────────────
 Binary path:      /opt/homebrew/bin/site-health
 Install method:   Homebrew
-Current version:  0.12.0
-Latest version:   0.12.0    (up to date)
+Current version:  0.13.0
+Latest version:   0.13.0    (up to date)
 
 Environment
 ───────────

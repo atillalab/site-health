@@ -22,6 +22,26 @@ type Source struct {
 	SkipMailChecks []string `json:"skip_mail_checks,omitempty"`
 }
 
+// EnvVar describes a supported SITE_HEALTH_* environment variable.
+type EnvVar struct {
+	Name string
+	Kind string // "bool" or "string"
+}
+
+// SupportedEnvVars returns metadata for all environment variables recognized
+// by FromEnv. The order is stable and matches the fields in Source.
+func SupportedEnvVars() []EnvVar {
+	return []EnvVar{
+		{Name: "SITE_HEALTH_VERBOSE", Kind: "bool"},
+		{Name: "SITE_HEALTH_SKIP_REDIRECT", Kind: "bool"},
+		{Name: "SITE_HEALTH_SKIP_MAIL", Kind: "bool"},
+		{Name: "SITE_HEALTH_SKIP_LLMS_TXT", Kind: "bool"},
+		{Name: "SITE_HEALTH_FORMAT", Kind: "string"},
+		{Name: "SITE_HEALTH_MAIL_CHECKS", Kind: "string"},
+		{Name: "SITE_HEALTH_SKIP_MAIL_CHECKS", Kind: "string"},
+	}
+}
+
 // DefaultPath returns the default config file path using the XDG Base Directory
 // Specification. If XDG_CONFIG_HOME is unset, it falls back to ~/.config.
 func DefaultPath() string {
@@ -60,37 +80,38 @@ func Load(path string) (*Source, error) {
 // Boolean variables accept values parseable by strconv.ParseBool.
 func FromEnv() *Source {
 	var s Source
-	if v, ok := os.LookupEnv("SITE_HEALTH_VERBOSE"); ok {
-		if b, err := strconv.ParseBool(v); err == nil {
-			s.Verbose = &b
+	for _, ev := range SupportedEnvVars() {
+		v, ok := os.LookupEnv(ev.Name)
+		if !ok {
+			continue
 		}
-	}
-	if v, ok := os.LookupEnv("SITE_HEALTH_SKIP_REDIRECT"); ok {
-		if b, err := strconv.ParseBool(v); err == nil {
-			s.SkipRedirect = &b
+		switch ev.Name {
+		case "SITE_HEALTH_VERBOSE":
+			if b, err := strconv.ParseBool(v); err == nil {
+				s.Verbose = &b
+			}
+		case "SITE_HEALTH_SKIP_REDIRECT":
+			if b, err := strconv.ParseBool(v); err == nil {
+				s.SkipRedirect = &b
+			}
+		case "SITE_HEALTH_SKIP_MAIL":
+			if b, err := strconv.ParseBool(v); err == nil {
+				s.SkipMail = &b
+			}
+		case "SITE_HEALTH_SKIP_LLMS_TXT":
+			if b, err := strconv.ParseBool(v); err == nil {
+				s.SkipLLMs = &b
+			}
+		case "SITE_HEALTH_FORMAT":
+			v = strings.TrimSpace(v)
+			if v != "" {
+				s.Format = &v
+			}
+		case "SITE_HEALTH_MAIL_CHECKS":
+			s.MailChecks = splitAndTrim(v)
+		case "SITE_HEALTH_SKIP_MAIL_CHECKS":
+			s.SkipMailChecks = splitAndTrim(v)
 		}
-	}
-	if v, ok := os.LookupEnv("SITE_HEALTH_SKIP_MAIL"); ok {
-		if b, err := strconv.ParseBool(v); err == nil {
-			s.SkipMail = &b
-		}
-	}
-	if v, ok := os.LookupEnv("SITE_HEALTH_SKIP_LLMS_TXT"); ok {
-		if b, err := strconv.ParseBool(v); err == nil {
-			s.SkipLLMs = &b
-		}
-	}
-	if v, ok := os.LookupEnv("SITE_HEALTH_FORMAT"); ok {
-		v = strings.TrimSpace(v)
-		if v != "" {
-			s.Format = &v
-		}
-	}
-	if v, ok := os.LookupEnv("SITE_HEALTH_MAIL_CHECKS"); ok {
-		s.MailChecks = splitAndTrim(v)
-	}
-	if v, ok := os.LookupEnv("SITE_HEALTH_SKIP_MAIL_CHECKS"); ok {
-		s.SkipMailChecks = splitAndTrim(v)
 	}
 	return &s
 }

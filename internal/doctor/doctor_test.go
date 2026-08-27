@@ -490,6 +490,72 @@ func TestCheckConfigFileInvalid(t *testing.T) {
 	}
 }
 
+func TestCheckEnvVarsNoneSet(t *testing.T) {
+	c := &Checker{}
+	report := &Report{}
+	c.checkEnvVars(report)
+
+	if len(report.Items) != 1 {
+		t.Fatalf("expected 1 item, got %+v", report.Items)
+	}
+	item := report.Items[0]
+	if item.Status != StatusOK {
+		t.Errorf("expected OK, got %s", item.Status)
+	}
+	if !strings.Contains(item.Value, "none set") {
+		t.Errorf("expected 'none set' in value, got %q", item.Value)
+	}
+	if item.Detail != "" {
+		t.Errorf("expected empty detail, got %q", item.Detail)
+	}
+}
+
+func TestCheckEnvVarsValid(t *testing.T) {
+	t.Setenv("SITE_HEALTH_FORMAT", "json")
+	t.Setenv("SITE_HEALTH_VERBOSE", "true")
+	t.Setenv("SITE_HEALTH_MAIL_CHECKS", "mx,spf")
+
+	c := &Checker{}
+	report := &Report{}
+	c.checkEnvVars(report)
+
+	if len(report.Items) != 1 {
+		t.Fatalf("expected 1 item, got %+v", report.Items)
+	}
+	item := report.Items[0]
+	if item.Status != StatusOK {
+		t.Errorf("expected OK, got %s", item.Status)
+	}
+	if !strings.Contains(item.Value, "3 set") {
+		t.Errorf("expected '3 set' in value, got %q", item.Value)
+	}
+	if !strings.Contains(item.Detail, "SITE_HEALTH_FORMAT=json") {
+		t.Errorf("expected format in detail, got %q", item.Detail)
+	}
+	if !strings.Contains(item.Detail, "SITE_HEALTH_VERBOSE=true") {
+		t.Errorf("expected verbose in detail, got %q", item.Detail)
+	}
+}
+
+func TestCheckEnvVarsInvalidBool(t *testing.T) {
+	t.Setenv("SITE_HEALTH_VERBOSE", "not-a-bool")
+
+	c := &Checker{}
+	report := &Report{}
+	c.checkEnvVars(report)
+
+	if len(report.Items) != 1 {
+		t.Fatalf("expected 1 item, got %+v", report.Items)
+	}
+	item := report.Items[0]
+	if item.Status != StatusWarn {
+		t.Errorf("expected WARN for invalid bool, got %s", item.Status)
+	}
+	if !strings.Contains(item.Detail, "not a valid boolean") {
+		t.Errorf("expected boolean warning in detail, got %q", item.Detail)
+	}
+}
+
 func TestRunUsesDefaults(t *testing.T) {
 	c := NewChecker()
 	if c.ExecutableFunc == nil {
