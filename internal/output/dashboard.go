@@ -8,7 +8,7 @@ import (
 )
 
 func RenderDashboard(w io.Writer, report *check.Report) {
-	fmt.Fprintf(w, "%sSite Health Check%s\n", bold, reset)
+	fmt.Fprintf(w, "%sSite Health Check%s\n", Bold, Reset)
 	fmt.Fprintf(w, "Domain: %s\n", report.Domain)
 
 	if report.ExpectedURL != "" {
@@ -16,7 +16,7 @@ func RenderDashboard(w io.Writer, report *check.Report) {
 	}
 
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "%sSITE HEALTH%s\n", bold, reset)
+	fmt.Fprintf(w, "%sSITE HEALTH%s\n", Bold, Reset)
 	fmt.Fprintln(w, "───────────")
 	fmt.Fprintf(w, "● %s\n", report.Domain)
 
@@ -56,13 +56,13 @@ func RenderDashboard(w io.Writer, report *check.Report) {
 		renderSimpleRow(w, "Mail", report.Checks.Mail.Status.String())
 	}
 
-	fmt.Fprintf(w, "Status: %s%s%s\n", statusColor(report.Summary.Status), report.Summary.Status, reset)
+	fmt.Fprintf(w, "Status: %s%s%s\n", StatusColor(report.Summary.Status), report.Summary.Status, Reset)
 
 	renderIssues(w, report.Issues)
 }
 
 func RenderMailDashboard(w io.Writer, report *check.Report) {
-	fmt.Fprintf(w, "%sMAIL HEALTH%s\n", bold, reset)
+	fmt.Fprintf(w, "%sMAIL HEALTH%s\n", Bold, Reset)
 	fmt.Fprintln(w, "───────────")
 	fmt.Fprintf(w, "● %s\n", report.Domain)
 
@@ -78,21 +78,21 @@ func RenderMailDashboard(w io.Writer, report *check.Report) {
 		}
 	}
 
-	fmt.Fprintf(w, "Status: %s%s%s\n", statusColor(report.Summary.Status), report.Summary.Status, reset)
+	fmt.Fprintf(w, "Status: %s%s%s\n", StatusColor(report.Summary.Status), report.Summary.Status, Reset)
 
 	renderIssues(w, report.Issues)
 }
 
 func renderSimpleRow(w io.Writer, label, status string) {
-	fmt.Fprintf(w, "  %-12s %s\n", label, formatStatusToken(status))
+	fmt.Fprintf(w, "  %-12s %s\n", label, FormatStatusToken(status))
 }
 
 func renderValueRow(w io.Writer, label, value, status string) {
 	switch status {
 	case "WARN":
-		fmt.Fprintf(w, "  %-12s %s    %s⚠ WARN%s\n", label, value, yellow, reset)
+		fmt.Fprintf(w, "  %-12s %s    %s⚠ WARN%s\n", label, value, Yellow, Reset)
 	case "FAIL":
-		fmt.Fprintf(w, "  %-12s %s    %s✖ FAIL%s\n", label, value, red, reset)
+		fmt.Fprintf(w, "  %-12s %s    %s✖ FAIL%s\n", label, value, Red, Reset)
 	default:
 		fmt.Fprintf(w, "  %-12s %s\n", label, value)
 	}
@@ -138,6 +138,6 @@ func renderIssues(w io.Writer, issues []check.Issue) {
 			fmt.Fprintf(w, "  ...  %d more; run with --verbose for full diagnostics\n", len(issues)-i)
 			break
 		}
-		fmt.Fprintf(w, "  %s%-4s%s  %s\n", statusColor(issue.Level), issue.Level, reset, issue.Message)
+		fmt.Fprintf(w, "  %s%-4s%s  %s\n", StatusColor(issue.Level), issue.Level, Reset, issue.Message)
 	}
 }

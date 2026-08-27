@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/atillalab/site-health/internal/check"
+	"github.com/atillalab/site-health/internal/doctor"
 	"github.com/atillalab/site-health/internal/domain"
 	"github.com/atillalab/site-health/internal/output"
 	"github.com/atillalab/site-health/internal/version"
@@ -43,9 +44,10 @@ func main() {
 	skipLLMs := flag.Bool("skip-llms-txt", false, "Skip the optional /llms.txt check")
 	skipRedirect := flag.Bool("skip-redirect", false, "Skip the canonical redirect check")
 	showVersion := flag.Bool("version", false, "Show version and exit")
+	doctorMode := flag.Bool("doctor", false, "Run self-diagnostics for the binary and environment")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--skip-redirect] [--format <dashboard|json>] [--version] <domain>\n")
+		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--skip-redirect] [--format <dashboard|json>] [--doctor] [--version] [<domain>]\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail-checks spf example.com\n")
@@ -56,6 +58,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-redirect example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --expected-url https://example.org/ example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --format json example.com\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health --doctor\n")
 	}
 
 	flag.Parse()
@@ -63,6 +66,11 @@ func main() {
 	if *showVersion {
 		fmt.Printf("site-health %s\n", version.Version)
 		os.Exit(0)
+	}
+
+	if *doctorMode {
+		runDoctor()
+		return
 	}
 
 	if *format != "dashboard" && *format != "json" && *format != "text" {
@@ -285,4 +293,16 @@ func detectForwarding(ctx context.Context, runner *check.Runner) {
 		runner.ForwardingHintURL = unique[0]
 		runner.ForwardingCandidates = unique
 	}
+}
+
+func runDoctor() {
+	ctx := context.Background()
+	checker := doctor.NewChecker()
+	report := checker.Run(ctx)
+	doctor.Render(os.Stdout, report)
+
+	if report.HasFailures() {
+		os.Exit(1)
+	}
+	os.Exit(0)
 }

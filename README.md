@@ -2,7 +2,7 @@
 
 A fast CLI for checking website and domain health.
 
-> **Status:** Go rewrite complete (v0.9.4)
+> **Status:** Go rewrite complete (v0.10.0)
 
 ## Quick Start
 
@@ -14,6 +14,7 @@ site-health --skip-mail example.com
 site-health --mail-checks spf example.com
 site-health --skip-redirect example.com
 site-health --format json example.com
+site-health --doctor
 ```
 
 ## Features
@@ -41,6 +42,7 @@ Zero external dependencies — stdlib only:
 - Optional `/llms.txt` availability check (skippable with `--skip-llms-txt`)
 - Canonical redirect check skippable with `--skip-redirect`
 - Machine-readable JSON output for automation and monitoring
+- Self-diagnostic `--doctor` mode for the binary and local environment
 
 ## Usage
 
@@ -188,7 +190,7 @@ Example:
 ```json
 {
   "tool": "site-health",
-  "version": "0.9.4",
+  "version": "0.10.0",
   "domain": "example.com",
   "mode": "site",
   "expected_url": "https://example.com/",
@@ -222,6 +224,36 @@ Example:
 ```
 
 In mail-only mode, the `checks` object contains just the `mail` block and the top-level `mode` is `"mail"`. When mail checks are skipped with `--skip-mail`, the `mail` block is omitted. When individual mail checks are skipped with `--mail-checks` or `--skip-mail-checks`, only the enabled mail subchecks appear under `checks.mail`.
+
+Run self-diagnostics for the binary and local environment. `--doctor` does not require a domain and checks the install path, detected installation method, current and latest versions, system time, DNS resolution, outbound HTTPS, WHOIS connectivity, and mail DNS capabilities:
+
+```bash
+site-health --doctor
+```
+
+Example:
+
+```text
+site-health doctor
+──────────────────
+Binary path:      /opt/homebrew/bin/site-health
+Install method:   Homebrew
+Current version:  0.10.0
+Latest version:   0.10.0    (up to date)
+
+Environment
+───────────
+System time:        OK  2026-08-27T12:34:56Z
+DNS resolution:     OK  example.com → 93.184.216.34
+Outbound HTTPS:     OK  https://detectportal.firefox.com/success.txt → 200 (success)
+WHOIS lookup:       OK  whois.iana.org:43 reachable
+Mail DNS (MX):      OK  1 record(s)
+Mail DNS (SPF):     OK  record found
+Mail DNS (DMARC):   OK  record found
+Status: HEALTHY
+```
+
+The latest-version check uses the GitHub Releases API. If the network is unavailable or the API rate-limit is exceeded, the check reports the error gracefully without failing the whole command.
 
 ## Installation
 

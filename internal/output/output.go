@@ -6,26 +6,27 @@ import (
 )
 
 var (
-	green  = "\033[32m"
-	red    = "\033[31m"
-	yellow = "\033[33m"
-	gray   = "\033[90m"
-	bold   = "\033[1m"
-	reset  = "\033[0m"
+	Green  = "\033[32m"
+	Red    = "\033[31m"
+	Yellow = "\033[33m"
+	Gray   = "\033[90m"
+	Bold   = "\033[1m"
+	Reset  = "\033[0m"
 )
 
 func init() {
-	if !isTerminal(os.Stdout) {
-		green = ""
-		red = ""
-		yellow = ""
-		gray = ""
-		bold = ""
-		reset = ""
+	if !IsTerminal(os.Stdout) {
+		Green = ""
+		Red = ""
+		Yellow = ""
+		Gray = ""
+		Bold = ""
+		Reset = ""
 	}
 }
 
-func isTerminal(f *os.File) bool {
+// IsTerminal reports whether f is a character device (terminal).
+func IsTerminal(f *os.File) bool {
 	fi, err := f.Stat()
 	if err != nil {
 		return false
@@ -33,21 +34,23 @@ func isTerminal(f *os.File) bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
-func statusColor(status string) string {
+// StatusColor returns the ANSI color sequence for a status token.
+func StatusColor(status string) string {
 	switch status {
 	case "OK", "HEALTHY":
-		return green
+		return Green
 	case "WARN", "WARNING":
-		return yellow
+		return Yellow
 	case "FAIL", "UNHEALTHY":
-		return red
+		return Red
 	case "SKIP":
-		return gray
+		return Gray
 	default:
-		return reset
+		return Reset
 	}
 }
 
-func formatStatusToken(status string) string {
-	return fmt.Sprintf("%s%s%s", statusColor(status), status, reset)
+// FormatStatusToken returns a status string wrapped in its status color.
+func FormatStatusToken(status string) string {
+	return fmt.Sprintf("%s%s%s", StatusColor(status), status, Reset)
 }
