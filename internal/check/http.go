@@ -97,15 +97,15 @@ func (r *Runner) checkHTTPWithProbe(probe func(string) probeResult) (redirectSta
 		if isHTTPS && strings.HasPrefix(result.FinalURL, "http://") {
 			redirectStatus = FAIL
 			httpsStatus = FAIL
-			r.Fail(fmt.Sprintf("%s — downgraded to %s", u, result.FinalURL))
+			r.Fail(fmt.Sprintf("%s — downgraded to %s (expected %s)", u, result.FinalURL, r.ExpectedURL))
 		}
 
 		if result.StatusCode != 200 {
 			redirectStatus = FAIL
-			r.Fail(fmt.Sprintf("%s — expected status 200, got %d", u, result.StatusCode))
+			r.Fail(fmt.Sprintf("%s — expected status 200, got %d (expected %s)", u, result.StatusCode, r.ExpectedURL))
 		} else if domain.ExtractHost(result.FinalURL) != domain.ExtractHost(r.ExpectedURL) {
 			redirectStatus = FAIL
-			r.Fail(fmt.Sprintf("%s — redirected to %s", u, result.FinalURL))
+			r.Fail(fmt.Sprintf("%s — redirected to %s (expected %s)", u, result.FinalURL, r.ExpectedURL))
 		} else if domain.ExtractHost(r.ExpectedURL) != r.Domain {
 			r.Verbosef("\033[32mPASS\033[0m  %s — forwarded to expected URL\n", u)
 		} else {
