@@ -18,6 +18,7 @@ type Source struct {
 	SkipMail       *bool    `json:"skip_mail,omitempty"`
 	SkipLLMs       *bool    `json:"skip_llms_txt,omitempty"`
 	Format         *string  `json:"format,omitempty"`
+	ExpectedHosts  []string `json:"expected_hosts,omitempty"`
 	MailChecks     []string `json:"mail_checks,omitempty"`
 	SkipMailChecks []string `json:"skip_mail_checks,omitempty"`
 }
@@ -37,6 +38,7 @@ func SupportedEnvVars() []EnvVar {
 		{Name: "SITE_HEALTH_SKIP_MAIL", Kind: "bool"},
 		{Name: "SITE_HEALTH_SKIP_LLMS_TXT", Kind: "bool"},
 		{Name: "SITE_HEALTH_FORMAT", Kind: "string"},
+		{Name: "SITE_HEALTH_EXPECTED_HOSTS", Kind: "string"},
 		{Name: "SITE_HEALTH_MAIL_CHECKS", Kind: "string"},
 		{Name: "SITE_HEALTH_SKIP_MAIL_CHECKS", Kind: "string"},
 	}
@@ -107,6 +109,8 @@ func FromEnv() *Source {
 			if v != "" {
 				s.Format = &v
 			}
+		case "SITE_HEALTH_EXPECTED_HOSTS":
+			s.ExpectedHosts = splitAndTrim(v)
 		case "SITE_HEALTH_MAIL_CHECKS":
 			s.MailChecks = splitAndTrim(v)
 		case "SITE_HEALTH_SKIP_MAIL_CHECKS":

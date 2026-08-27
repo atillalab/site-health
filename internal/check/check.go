@@ -58,9 +58,9 @@ type Report struct {
 	Tool         string     `json:"tool"`
 	Version      string     `json:"version"`
 	Domain       string     `json:"domain"`
-	Mode         string     `json:"mode"`
-	ExpectedHost string     `json:"expected_host,omitempty"`
-	Forwarding   Forwarding `json:"forwarding,omitempty"`
+	Mode          string     `json:"mode"`
+	ExpectedHosts []string   `json:"expected_hosts,omitempty"`
+	Forwarding    Forwarding `json:"forwarding,omitempty"`
 	Checks       Checks     `json:"checks"`
 	Issues       []Issue    `json:"issues"`
 	Summary      Summary    `json:"summary"`
@@ -166,14 +166,14 @@ func (m MailChecks) EnabledCount() int {
 }
 
 type Runner struct {
-	Domain       string
-	ExpectedHost string
-	MailOnly     bool
-	Verbose      bool
-	SkipMail     bool
-	MailChecks   MailChecks
-	SkipLLMs     bool
-	SkipRedirect bool
+	Domain        string
+	ExpectedHosts []string
+	MailOnly      bool
+	Verbose       bool
+	SkipMail      bool
+	MailChecks    MailChecks
+	SkipLLMs      bool
+	SkipRedirect  bool
 
 	ForwardingAutoDetected bool
 	ForwardingAmbiguous    bool
@@ -239,11 +239,11 @@ func (r *Runner) enabledMailChecks() MailChecks {
 
 func (r *Runner) buildReport(mode string) *Report {
 	return &Report{
-		Tool:         "site-health",
-		Version:      version.Version,
-		Domain:       r.Domain,
-		Mode:         mode,
-		ExpectedHost: r.ExpectedHost,
+		Tool:          "site-health",
+		Version:       version.Version,
+		Domain:        r.Domain,
+		Mode:          mode,
+		ExpectedHosts: r.ExpectedHosts,
 		Forwarding: Forwarding{
 			AutoDetected: r.ForwardingAutoDetected,
 			Ambiguous:    r.ForwardingAmbiguous,

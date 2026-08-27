@@ -49,6 +49,9 @@ func TestInitConfigCLI(t *testing.T) {
 	if !strings.Contains(string(data), `"format": "dashboard"`) {
 		t.Errorf("config file missing expected content: %s", data)
 	}
+	if !strings.Contains(string(data), `"expected_hosts": []`) {
+		t.Errorf("config file missing expected_hosts: %s", data)
+	}
 
 	// A second run should refuse to overwrite.
 	cmd = exec.Command(bin, "--config", configPath, "--init-config")

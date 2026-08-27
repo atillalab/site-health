@@ -196,6 +196,64 @@ func TestStringFlag(t *testing.T) {
 	}
 }
 
+func TestMergeExpectedHostFlags(t *testing.T) {
+	tests := []struct {
+		name          string
+		expectedHost  string
+		expectedHosts string
+		want          []string
+	}{
+		{name: "empty", want: nil},
+		{name: "singular only", expectedHost: "example.com", want: []string{"example.com"}},
+		{name: "plural only", expectedHosts: "example.com, www.example.com", want: []string{"example.com", "www.example.com"}},
+		{name: "both merged", expectedHost: "example.com", expectedHosts: "www.example.com", want: []string{"example.com", "www.example.com"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeExpectedHostFlags(tt.expectedHost, tt.expectedHosts)
+			if len(got) != len(tt.want) {
+				t.Errorf("mergeExpectedHostFlags() = %v, want %v", got, tt.want)
+				return
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("mergeExpectedHostFlags()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestNormalizeExpectedHosts(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+		want  []string
+	}{
+		{name: "empty", hosts: []string{}, want: nil},
+		{name: "single", hosts: []string{"example.com"}, want: []string{"example.com"}},
+		{name: "dedupe", hosts: []string{"example.com", "example.com", "www.example.com"}, want: []string{"example.com", "www.example.com"}},
+		{name: "extract host from URL", hosts: []string{"https://www.example.com/"}, want: []string{"www.example.com"}},
+		{name: "skip invalid", hosts: []string{"example.com", "://bad", "www.example.com"}, want: []string{"example.com", "www.example.com"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeExpectedHosts(tt.hosts)
+			if len(got) != len(tt.want) {
+				t.Errorf("normalizeExpectedHosts() = %v, want %v", got, tt.want)
+				return
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("normalizeExpectedHosts()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestWriteSampleConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "site-health", "config.json")
@@ -210,6 +268,9 @@ func TestWriteSampleConfig(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"format": "dashboard"`) {
 		t.Errorf("sample config missing expected content: %s", data)
+	}
+	if !strings.Contains(string(data), `"expected_hosts": []`) {
+		t.Errorf("sample config missing expected_hosts: %s", data)
 	}
 
 	if err := writeSampleConfig(path); err == nil {

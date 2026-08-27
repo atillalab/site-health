@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -83,7 +84,8 @@ func main() {
 	mailOnly := flag.Bool("mail", false, "Run only mail-related DNS checks")
 	flag.Var(&verbose, "verbose", "Show detailed troubleshooting diagnostics")
 	flag.Var(&format, "format", "Output format: dashboard or json")
-	expectedHost := flag.String("expected-host", "", "Expected final host after redirects (host or URL)")
+	expectedHost := flag.String("expected-host", "", "Expected final host after redirects (host or URL); alias for --expected-hosts")
+	expectedHosts := flag.String("expected-hosts", "", "Comma-separated expected final hosts after redirects (hosts or URLs)")
 	flag.Var(&skipMail, "skip-mail", "Skip mail-related DNS checks in site mode")
 	flag.Var(&mailChecks, "mail-checks", "Comma-separated mail checks to run: mx, spf, dmarc")
 	flag.Var(&skipMailChecks, "skip-mail-checks", "Comma-separated mail checks to skip: mx, spf, dmarc")
@@ -94,7 +96,7 @@ func main() {
 	doctorMode := flag.Bool("doctor", false, "Run self-diagnostics for the binary and environment")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-host <host>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--skip-redirect] [--format <dashboard|json>] [--config <path>] [--init-config] [--doctor] [--version] [<domain>]\n")
+		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-hosts <hosts>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--skip-redirect] [--format <dashboard|json>] [--config <path>] [--init-config] [--doctor] [--version] [<domain>]\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail-checks spf example.com\n")
@@ -103,7 +105,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-mail example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-llms-txt example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-redirect example.com\n")
-		fmt.Fprintf(os.Stderr, "Example: site-health --expected-host example.org example.com\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health --expected-hosts example.org example.com\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health --expected-hosts example.com,www.example.com example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --format json example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --init-config\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --doctor\n")
@@ -212,15 +215,15 @@ func main() {
 		SkipRedirect: resolvedSkipRedirect,
 	}
 
-	if *expectedHost != "" {
-		host := domain.ParseHost(*expectedHost)
-		if host == "" {
-			fmt.Fprintf(os.Stderr, "Error: --expected-host must be a valid host or absolute http:// or https:// URL.\n")
-			os.Exit(2)
-		}
-		runner.ExpectedHost = host
-	} else {
-		runner.ExpectedHost = domainName
+	cliExpectedHosts := mergeExpectedHostFlags(*expectedHost, *expectedHosts)
+	resolvedExpectedHosts := config.MergeStringSlice(cliExpectedHosts, len(cliExpectedHosts) > 0, envCfg.ExpectedHosts, fileCfg.ExpectedHosts)
+	if len(resolvedExpectedHosts) == 0 {
+		resolvedExpectedHosts = []string{domainName}
+	}
+	runner.ExpectedHosts = normalizeExpectedHosts(resolvedExpectedHosts)
+	if len(runner.ExpectedHosts) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: --expected-hosts must contain at least one valid host or absolute http:// or https:// URL.\n")
+		os.Exit(2)
 	}
 
 	ctx := context.Background()
@@ -346,8 +349,44 @@ func splitMailCheckString(value string) []string {
 	return out
 }
 
+func mergeExpectedHostFlags(expectedHost, expectedHosts string) []string {
+	var out []string
+	if expectedHost != "" {
+		out = append(out, splitAndTrimHosts(expectedHost)...)
+	}
+	if expectedHosts != "" {
+		out = append(out, splitAndTrimHosts(expectedHosts)...)
+	}
+	return out
+}
+
+func splitAndTrimHosts(value string) []string {
+	var out []string
+	for _, part := range strings.Split(value, ",") {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func normalizeExpectedHosts(hosts []string) []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, h := range hosts {
+		host := domain.ParseHost(h)
+		if host == "" || seen[host] {
+			continue
+		}
+		seen[host] = true
+		out = append(out, host)
+	}
+	return out
+}
+
 func detectForwarding(ctx context.Context, runner *check.Runner) {
-	if runner.ExpectedHost != runner.Domain {
+	if len(runner.ExpectedHosts) != 1 || runner.ExpectedHosts[0] != runner.Domain {
 		return
 	}
 
@@ -382,7 +421,7 @@ func detectForwarding(ctx context.Context, runner *check.Runner) {
 			defer wg.Done()
 			result := runner.ProbeURLForForwarding(targetURL)
 			finalHost := domain.ExtractHost(result.FinalURL)
-			if result.StatusCode == 200 && finalHost != runner.ExpectedHost && !domain.IsSameSiteHost(finalHost, runner.Domain) {
+			if result.StatusCode == 200 && !slices.Contains(runner.ExpectedHosts, finalHost) && !domain.IsSameSiteHost(finalHost, runner.Domain) {
 				mu.Lock()
 				candidates = append(candidates, candidate{host: finalHost})
 				mu.Unlock()
@@ -401,7 +440,7 @@ func detectForwarding(ctx context.Context, runner *check.Runner) {
 	}
 
 	if len(unique) == 1 {
-		runner.ExpectedHost = unique[0]
+		runner.ExpectedHosts = []string{unique[0]}
 		runner.ForwardingAutoDetected = true
 		runner.Verbosef("Domain forwards to %s\n", unique[0])
 		runner.Verbosef("Using forwarded host as expected host for this run\n")
@@ -434,6 +473,7 @@ func writeSampleConfig(path string) error {
   "skip_mail": false,
   "skip_llms_txt": false,
   "format": "dashboard",
+  "expected_hosts": [],
   "mail_checks": [],
   "skip_mail_checks": []
 }

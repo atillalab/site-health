@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/atillalab/site-health/internal/check"
 )
@@ -11,8 +12,8 @@ func RenderDashboard(w io.Writer, report *check.Report) {
 	fmt.Fprintf(w, "%sSite Health Check%s\n", Bold, Reset)
 	fmt.Fprintf(w, "Domain: %s\n", report.Domain)
 
-	if report.ExpectedHost != "" {
-		fmt.Fprintf(w, "Expected Host: %s\n", report.ExpectedHost)
+	if len(report.ExpectedHosts) > 0 {
+		fmt.Fprintf(w, "Expected Hosts: %s\n", strings.Join(report.ExpectedHosts, ", "))
 	}
 
 	fmt.Fprintln(w)

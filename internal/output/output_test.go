@@ -100,6 +100,35 @@ func TestRenderDashboard(t *testing.T) {
 	}
 }
 
+func TestRenderDashboardExpectedHosts(t *testing.T) {
+	tests := []struct {
+		name     string
+		hosts    []string
+		expected string
+	}{
+		{name: "single", hosts: []string{"example.com"}, expected: "Expected Hosts: example.com"},
+		{name: "multiple", hosts: []string{"example.com", "www.example.com"}, expected: "Expected Hosts: example.com, www.example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report := &check.Report{
+				Domain:        "example.com",
+				Mode:          "site",
+				ExpectedHosts: tt.hosts,
+				Summary:       check.Summary{Status: "HEALTHY"},
+			}
+
+			var buf bytes.Buffer
+			RenderDashboard(&buf, report)
+
+			if !bytes.Contains(buf.Bytes(), []byte(tt.expected)) {
+				t.Errorf("output missing %q\n%s", tt.expected, buf.String())
+			}
+		})
+	}
+}
+
 func TestRenderDashboardDomainRegistrationExpiryExamples(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -204,8 +204,8 @@ func TestRunnerEnabledMailChecksDefaultsToAll(t *testing.T) {
 
 func TestRunnerBuildReport(t *testing.T) {
 	r := &Runner{
-		Domain:       "example.com",
-		ExpectedHost: "example.com",
+		Domain:        "example.com",
+		ExpectedHosts: []string{"example.com"},
 	}
 	r.Fail("test issue")
 

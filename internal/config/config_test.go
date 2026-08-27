@@ -49,6 +49,7 @@ func TestLoadValidFile(t *testing.T) {
 		"verbose": true,
 		"skip_redirect": true,
 		"format": "json",
+		"expected_hosts": ["example.com", "www.example.com"],
 		"mail_checks": ["mx", "spf"]
 	}`
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -68,6 +69,9 @@ func TestLoadValidFile(t *testing.T) {
 	}
 	if src.Format == nil || *src.Format != "json" {
 		t.Errorf("format = %v, want json", src.Format)
+	}
+	if !reflect.DeepEqual(src.ExpectedHosts, []string{"example.com", "www.example.com"}) {
+		t.Errorf("expected_hosts = %v, want [example.com www.example.com]", src.ExpectedHosts)
 	}
 	if !reflect.DeepEqual(src.MailChecks, []string{"mx", "spf"}) {
 		t.Errorf("mail_checks = %v, want [mx spf]", src.MailChecks)
@@ -93,6 +97,7 @@ func TestFromEnv(t *testing.T) {
 	t.Setenv("SITE_HEALTH_SKIP_MAIL", "TRUE")
 	t.Setenv("SITE_HEALTH_SKIP_LLMS_TXT", "true")
 	t.Setenv("SITE_HEALTH_FORMAT", "json")
+	t.Setenv("SITE_HEALTH_EXPECTED_HOSTS", "example.com, www.example.com")
 	t.Setenv("SITE_HEALTH_MAIL_CHECKS", "mx, dmarc")
 	t.Setenv("SITE_HEALTH_SKIP_MAIL_CHECKS", "spf")
 
@@ -112,6 +117,9 @@ func TestFromEnv(t *testing.T) {
 	}
 	if src.Format == nil || *src.Format != "json" {
 		t.Errorf("format = %v, want json", src.Format)
+	}
+	if !reflect.DeepEqual(src.ExpectedHosts, []string{"example.com", "www.example.com"}) {
+		t.Errorf("expected_hosts = %v, want [example.com www.example.com]", src.ExpectedHosts)
 	}
 	if !reflect.DeepEqual(src.MailChecks, []string{"mx", "dmarc"}) {
 		t.Errorf("mail_checks = %v, want [mx dmarc]", src.MailChecks)

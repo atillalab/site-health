@@ -2,7 +2,7 @@
 
 A fast CLI for checking website and domain health.
 
-> **Status:** Go rewrite complete (v0.13.0)
+> **Status:** Go rewrite complete (v0.14.0)
 
 ## Quick Start
 
@@ -59,7 +59,7 @@ Example:
 ```text
 Site Health Check
 Domain: example.com
-Expected Host: example.com
+Expected Hosts: example.com
 
 SITE HEALTH
 ───────────
@@ -79,7 +79,7 @@ When a forwarded or explicit canonical URL matters, the dashboard includes it:
 ```text
 Site Health Check
 Domain: example.com
-Expected Host: example.org
+Expected Hosts: example.org
 
 SITE HEALTH
 ───────────
@@ -178,7 +178,13 @@ site-health example.com
 To strictly require a specific final host, provide it explicitly:
 
 ```bash
-site-health --expected-host example.org example.com
+site-health --expected-hosts example.org example.com
+```
+
+When a site intentionally serves the same content from multiple hosts (for example, both `https://example.com` and `https://www.example.com`), pass them as a comma-separated list. The singular `--expected-host` is also accepted as an alias:
+
+```bash
+site-health --expected-hosts example.com,www.example.com example.com
 ```
 
 Output a machine-readable JSON document instead of the dashboard (useful for scripts, CI, and monitoring). `--verbose` output is suppressed in JSON mode; the same exit codes apply (`0` healthy, `1` issues found):
@@ -192,10 +198,10 @@ Example:
 ```json
 {
   "tool": "site-health",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "domain": "example.com",
   "mode": "site",
-  "expected_host": "example.com",
+  "expected_hosts": ["example.com"],
   "forwarding": {
     "auto_detected": false,
     "ambiguous": false,
@@ -240,8 +246,8 @@ site-health doctor
 ──────────────────
 Binary path:      /opt/homebrew/bin/site-health
 Install method:   Homebrew
-Current version:  0.13.0
-Latest version:   0.13.0    (up to date)
+Current version:  0.14.0
+Latest version:   0.14.0    (up to date)
 
 Environment
 ───────────
@@ -292,6 +298,7 @@ Example config:
   "skip_mail": false,
   "skip_llms_txt": false,
   "format": "json",
+  "expected_hosts": [],
   "mail_checks": ["mx", "spf"],
   "skip_mail_checks": []
 }
@@ -299,21 +306,23 @@ Example config:
 
 Supported settings:
 
-| Setting            | Type       | Matching flag          |
-|--------------------|------------|------------------------|
-| `verbose`          | boolean    | `--verbose`            |
-| `skip_redirect`    | boolean    | `--skip-redirect`      |
-| `skip_mail`        | boolean    | `--skip-mail`          |
-| `skip_llms_txt`    | boolean    | `--skip-llms-txt`      |
-| `format`           | string     | `--format`             |
-| `mail_checks`      | string[]   | `--mail-checks`        |
-| `skip_mail_checks` | string[]   | `--skip-mail-checks`   |
+| Setting            | Type       | Matching flag            |
+|--------------------|------------|--------------------------|
+| `verbose`          | boolean    | `--verbose`              |
+| `skip_redirect`    | boolean    | `--skip-redirect`        |
+| `skip_mail`        | boolean    | `--skip-mail`            |
+| `skip_llms_txt`    | boolean    | `--skip-llms-txt`        |
+| `format`           | string     | `--format`               |
+| `expected_hosts`   | string[]   | `--expected-hosts`       |
+| `mail_checks`      | string[]   | `--mail-checks`          |
+| `skip_mail_checks` | string[]   | `--skip-mail-checks`     |
 
 The same options can be set via environment variables:
 
 ```bash
 export SITE_HEALTH_FORMAT=json
 export SITE_HEALTH_SKIP_REDIRECT=true
+export SITE_HEALTH_EXPECTED_HOSTS=example.com,www.example.com
 export SITE_HEALTH_MAIL_CHECKS=mx,spf
 ```
 

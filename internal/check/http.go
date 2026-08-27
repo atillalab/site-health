@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -105,17 +106,18 @@ func (r *Runner) checkHTTPWithProbe(probe func(string) probeResult) (redirectSta
 		if isHTTPS && strings.HasPrefix(result.FinalURL, "http://") {
 			redirectStatus = FAIL
 			httpsStatus = FAIL
-			r.Fail(fmt.Sprintf("%s — downgraded to %s (expected %s)", u, result.FinalURL, r.ExpectedHost))
+			r.Fail(fmt.Sprintf("%s — downgraded to %s (expected %s)", u, result.FinalURL, strings.Join(r.ExpectedHosts, ", ")))
 		}
 
 		if !r.SkipRedirect {
+			finalHost := domain.ExtractHost(result.FinalURL)
 			if result.StatusCode != 200 {
 				redirectStatus = FAIL
-				r.Fail(fmt.Sprintf("%s — expected status 200, got %d (expected %s)", u, result.StatusCode, r.ExpectedHost))
-			} else if domain.ExtractHost(result.FinalURL) != r.ExpectedHost {
+				r.Fail(fmt.Sprintf("%s — expected status 200, got %d (expected %s)", u, result.StatusCode, strings.Join(r.ExpectedHosts, ", ")))
+			} else if !slices.Contains(r.ExpectedHosts, finalHost) {
 				redirectStatus = FAIL
-				r.Fail(fmt.Sprintf("%s — redirected to %s (expected %s)", u, result.FinalURL, r.ExpectedHost))
-			} else if r.ExpectedHost != r.Domain {
+				r.Fail(fmt.Sprintf("%s — redirected to %s (expected %s)", u, result.FinalURL, strings.Join(r.ExpectedHosts, ", ")))
+			} else if !slices.Contains(r.ExpectedHosts, r.Domain) {
 				r.Verbosef("\033[32mPASS\033[0m  %s — forwarded to expected host\n", u)
 			} else {
 				r.Verbosef("\033[32mPASS\033[0m  %s\n", u)
@@ -214,7 +216,7 @@ func (r *Runner) CheckContent() {
 		},
 	}
 
-	expectedURL := "https://" + r.ExpectedHost + "/"
+	expectedURL := "https://" + r.ExpectedHosts[0] + "/"
 
 	start := time.Now()
 	resp, err := client.Get(expectedURL)
@@ -242,7 +244,8 @@ func (r *Runner) CheckContent() {
 		r.Fail(fmt.Sprintf("canonical page — expected 200, got %d", resp.StatusCode))
 	}
 
-	if resp.Request.URL.String() == expectedURL || domain.ExtractHost(resp.Request.URL.String()) == r.ExpectedHost {
+	finalHost := domain.ExtractHost(resp.Request.URL.String())
+	if resp.Request.URL.String() == expectedURL || slices.Contains(r.ExpectedHosts, finalHost) {
 		r.Verbosef("\033[32mPASS\033[0m  canonical page at expected host\n")
 	} else {
 		r.Fail(fmt.Sprintf("canonical page redirected to unexpected URL: %s", resp.Request.URL.String()))
