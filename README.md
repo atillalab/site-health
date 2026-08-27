@@ -2,7 +2,7 @@
 
 A fast CLI for checking website and domain health.
 
-> **Status:** Go rewrite complete (v0.14.0)
+> **Status:** Go rewrite complete (v0.15.0)
 
 ## Quick Start
 
@@ -10,6 +10,7 @@ A fast CLI for checking website and domain health.
 site-health example.com
 site-health --verbose example.com
 site-health --mail example.com
+site-health --whois example.com
 site-health --skip-mail example.com
 site-health --mail-checks spf example.com
 site-health --skip-redirect example.com
@@ -40,6 +41,7 @@ Zero external dependencies — stdlib only:
 - DMARC TXT record validation
 - Mail checks skippable in site mode with `--skip-mail`
 - Individual mail checks selectable with `--mail-checks` and `--skip-mail-checks`
+- WHOIS-only mode with `--whois` for domain registration checks without HTTP probes
 - Optional `/llms.txt` availability check (skippable with `--skip-llms-txt`)
 - Canonical redirect check skippable with `--skip-redirect`
 - Machine-readable JSON output for automation and monitoring
@@ -130,6 +132,34 @@ Show detailed mail diagnostics:
 site-health --mail --verbose example.com
 ```
 
+Run only WHOIS / domain-registration checks:
+
+```bash
+site-health --whois example.com
+```
+
+WHOIS mode checks only:
+
+- Domain registration expiry
+- Registrar
+
+Example:
+
+```text
+WHOIS / Domain Registration
+─────────────────────────
+● example.com
+  Domain Reg   350 days (13 Aug 2027)
+  Registrar    RESERVED-Internet Assigned Numbers Authority
+Status: HEALTHY
+```
+
+Show detailed WHOIS diagnostics:
+
+```bash
+site-health --whois --verbose example.com
+```
+
 Run only selected mail checks:
 
 ```bash
@@ -198,7 +228,7 @@ Example:
 ```json
 {
   "tool": "site-health",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "domain": "example.com",
   "mode": "site",
   "expected_hosts": ["example.com"],
@@ -231,7 +261,7 @@ Example:
 }
 ```
 
-In mail-only mode, the `checks` object contains just the `mail` block and the top-level `mode` is `"mail"`. When mail checks are skipped with `--skip-mail`, the `mail` block is omitted. When individual mail checks are skipped with `--mail-checks` or `--skip-mail-checks`, only the enabled mail subchecks appear under `checks.mail`.
+In mail-only mode, the `checks` object contains just the `mail` block and the top-level `mode` is `"mail"`. In WHOIS-only mode, the `checks` object contains just the `domain_registration` block and the top-level `mode` is `"whois"`. When mail checks are skipped with `--skip-mail`, the `mail` block is omitted. When individual mail checks are skipped with `--mail-checks` or `--skip-mail-checks`, only the enabled mail subchecks appear under `checks.mail`.
 
 Run self-diagnostics for the binary and local environment. `--doctor` does not require a domain and checks the install path, detected installation method, current and latest versions, system time, config file, DNS resolution, outbound HTTPS, WHOIS connectivity, and mail DNS capabilities:
 
@@ -246,8 +276,8 @@ site-health doctor
 ──────────────────
 Binary path:      /opt/homebrew/bin/site-health
 Install method:   Homebrew
-Current version:  0.14.0
-Latest version:   0.14.0    (up to date)
+Current version:  0.15.0
+Latest version:   0.15.0    (up to date)
 
 Environment
 ───────────
@@ -297,6 +327,7 @@ Example config:
   "skip_redirect": true,
   "skip_mail": false,
   "skip_llms_txt": false,
+  "whois": false,
   "format": "json",
   "expected_hosts": [],
   "mail_checks": ["mx", "spf"],
@@ -312,6 +343,7 @@ Supported settings:
 | `skip_redirect`    | boolean    | `--skip-redirect`        |
 | `skip_mail`        | boolean    | `--skip-mail`            |
 | `skip_llms_txt`    | boolean    | `--skip-llms-txt`        |
+| `whois`            | boolean    | `--whois`                |
 | `format`           | string     | `--format`               |
 | `expected_hosts`   | string[]   | `--expected-hosts`       |
 | `mail_checks`      | string[]   | `--mail-checks`          |

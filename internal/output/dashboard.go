@@ -84,6 +84,23 @@ func RenderMailDashboard(w io.Writer, report *check.Report) {
 	renderIssues(w, report.Issues)
 }
 
+func RenderWhoisDashboard(w io.Writer, report *check.Report) {
+	fmt.Fprintf(w, "%sWHOIS / Domain Registration%s\n", Bold, Reset)
+	fmt.Fprintln(w, "─────────────────────────")
+	fmt.Fprintf(w, "● %s\n", report.Domain)
+
+	if report.Checks.DomainRegistration != nil {
+		renderValueRow(w, "Domain Reg", domainRegistrationValue(report.Checks.DomainRegistration), report.Checks.DomainRegistration.Status.String())
+		if report.Checks.DomainRegistration.Registrar != "" {
+			fmt.Fprintf(w, "  %-12s %s\n", "Registrar", report.Checks.DomainRegistration.Registrar)
+		}
+	}
+
+	fmt.Fprintf(w, "Status: %s%s%s\n", StatusColor(report.Summary.Status), report.Summary.Status, Reset)
+
+	renderIssues(w, report.Issues)
+}
+
 func renderSimpleRow(w io.Writer, label, status string) {
 	fmt.Fprintf(w, "  %-12s %s\n", label, FormatStatusToken(status))
 }

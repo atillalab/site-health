@@ -227,3 +227,19 @@ func TestRunnerBuildReport(t *testing.T) {
 		t.Errorf("Summary.Status = %q, want 'UNHEALTHY'", report.Summary.Status)
 	}
 }
+
+func TestRunnerBuildReportWhoisMode(t *testing.T) {
+	r := &Runner{
+		Domain:        "example.com",
+		ExpectedHosts: []string{"example.com"},
+	}
+
+	report := r.buildReport("whois")
+
+	if report.Mode != "whois" {
+		t.Errorf("Mode = %q, want 'whois'", report.Mode)
+	}
+	if report.Summary.Status != "HEALTHY" {
+		t.Errorf("Summary.Status = %q, want 'HEALTHY'", report.Summary.Status)
+	}
+}

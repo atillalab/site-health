@@ -193,12 +193,22 @@ func domainRegistrationStatus(daysRemaining int) Status {
 func (r *Runner) CheckDomainRegistration() *DomainRegistrationResult {
 	result := &DomainRegistrationResult{Status: OK}
 
-	r.Verbosef("\n\033[1m== Domain Registration ==\033[0m\n")
+	var vb strings.Builder
+	verbose := func(format string, args ...any) {
+		fmt.Fprintf(&vb, format, args...)
+	}
+	defer func() {
+		if vb.Len() > 0 {
+			r.Verbosef("%s", vb.String())
+		}
+	}()
+
+	verbose("\n\033[1m== Domain Registration ==\033[0m\n")
 
 	whoisDomain := r.Domain
 	if domain.IsSubdomain(r.Domain) {
 		whoisDomain = domain.ApexDomain(r.Domain)
-		r.Verbosef("\033[36mINFO\033[0m  subdomain detected; checking registration of apex domain %s\n", whoisDomain)
+		verbose("\033[36mINFO\033[0m  subdomain detected; checking registration of apex domain %s\n", whoisDomain)
 	}
 
 	tld := getTLDDomain(whoisDomain)
@@ -246,7 +256,7 @@ func (r *Runner) CheckDomainRegistration() *DomainRegistrationResult {
 					result.Status = WARN
 					r.Warn(fmt.Sprintf("domain registration expires in %d days", daysRemaining))
 				default:
-					r.Verbosef("\033[32mPASS\033[0m  domain registration expires in %d days\n", daysRemaining)
+					verbose("\033[32mPASS\033[0m  domain registration expires in %d days\n", daysRemaining)
 				}
 			} else {
 				result.Status = WARN
@@ -259,7 +269,7 @@ func (r *Runner) CheckDomainRegistration() *DomainRegistrationResult {
 		}
 	}
 
-	r.logDomainRegistrationDetails(result)
+	r.logDomainRegistrationDetails(result, verbose)
 
 	if result.ExpiresAt == "" {
 		result.Status = WARN
@@ -269,12 +279,12 @@ func (r *Runner) CheckDomainRegistration() *DomainRegistrationResult {
 	return result
 }
 
-func (r *Runner) logDomainRegistrationDetails(result *DomainRegistrationResult) {
+func (r *Runner) logDomainRegistrationDetails(result *DomainRegistrationResult, verbose func(string, ...any)) {
 	if result.Registrar != "" {
-		r.Verbosef("      → registrar: %s\n", result.Registrar)
+		verbose("      → registrar: %s\n", result.Registrar)
 	}
 
 	if result.ExpiresAt != "" {
-		r.Verbosef("      → expiry date: %s\n", result.ExpiresAt)
+		verbose("      → expiry date: %s\n", result.ExpiresAt)
 	}
 }

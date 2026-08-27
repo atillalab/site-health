@@ -75,6 +75,7 @@ func main() {
 		skipMail       boolFlag
 		skipLLMs       boolFlag
 		skipRedirect   boolFlag
+		whoisOnly      boolFlag
 		mailChecks     mailCheckListFlag
 		skipMailChecks mailCheckListFlag
 	)
@@ -91,14 +92,16 @@ func main() {
 	flag.Var(&skipMailChecks, "skip-mail-checks", "Comma-separated mail checks to skip: mx, spf, dmarc")
 	flag.Var(&skipLLMs, "skip-llms-txt", "Skip the optional /llms.txt check")
 	flag.Var(&skipRedirect, "skip-redirect", "Skip the canonical redirect check")
+	flag.Var(&whoisOnly, "whois", "Run only WHOIS/domain-registration checks")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	initConfig := flag.Bool("init-config", false, "Write a sample config file and exit")
 	doctorMode := flag.Bool("doctor", false, "Run self-diagnostics for the binary and environment")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-hosts <hosts>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--skip-redirect] [--format <dashboard|json>] [--config <path>] [--init-config] [--doctor] [--version] [<domain>]\n")
+		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--whois] [--verbose] [--expected-hosts <hosts>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--skip-redirect] [--format <dashboard|json>] [--config <path>] [--init-config] [--doctor] [--version] [<domain>]\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail example.com\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health --whois example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail-checks spf example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-mail-checks spf example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --verbose example.com\n")
@@ -161,6 +164,7 @@ func main() {
 	resolvedSkipMail := config.MergeBool(skipMail.value, skipMail.set, false, envCfg.SkipMail, fileCfg.SkipMail)
 	resolvedSkipLLMs := config.MergeBool(skipLLMs.value, skipLLMs.set, false, envCfg.SkipLLMs, fileCfg.SkipLLMs)
 	resolvedSkipRedirect := config.MergeBool(skipRedirect.value, skipRedirect.set, false, envCfg.SkipRedirect, fileCfg.SkipRedirect)
+	resolvedWhoisOnly := config.MergeBool(whoisOnly.value, whoisOnly.set, false, envCfg.WhoisOnly, fileCfg.WhoisOnly)
 
 	mailCheckNames := splitMailCheckString(mailChecks.value)
 	mailCheckNames = config.MergeStringSlice(mailCheckNames, mailChecks.set, envCfg.MailChecks, fileCfg.MailChecks)
@@ -176,7 +180,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	if err := validateOptions(*mailOnly, resolvedSkipMail, mailChecksSet, skipMailChecksSet, selectedMailChecks); err != nil {
+	if err := validateOptions(*mailOnly, resolvedWhoisOnly, resolvedSkipMail, mailChecksSet, skipMailChecksSet, selectedMailChecks); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(2)
 	}
@@ -208,6 +212,7 @@ func main() {
 	runner := &check.Runner{
 		Domain:       domainName,
 		MailOnly:     *mailOnly,
+		WhoisOnly:    resolvedWhoisOnly,
 		Verbose:      verboseEnabled,
 		SkipMail:     resolvedSkipMail,
 		MailChecks:   selectedMailChecks,
@@ -228,13 +233,15 @@ func main() {
 
 	ctx := context.Background()
 
-	if !*mailOnly {
+	if !*mailOnly && !resolvedWhoisOnly {
 		detectForwarding(ctx, runner)
 	}
 
 	report := runner.RunChecks(ctx)
 	report.Mode = "mail"
-	if !*mailOnly {
+	if resolvedWhoisOnly {
+		report.Mode = "whois"
+	} else if !*mailOnly {
 		report.Mode = "site"
 	}
 
@@ -246,7 +253,9 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *mailOnly {
+	if resolvedWhoisOnly {
+		output.RenderWhoisDashboard(os.Stdout, report)
+	} else if *mailOnly {
 		output.RenderMailDashboard(os.Stdout, report)
 	} else {
 		output.RenderDashboard(os.Stdout, report)
@@ -258,7 +267,13 @@ func main() {
 	os.Exit(0)
 }
 
-func validateOptions(mailOnly, skipMail, mailChecksSet, skipMailChecksSet bool, mailChecks check.MailChecks) error {
+func validateOptions(mailOnly, whoisOnly, skipMail, mailChecksSet, skipMailChecksSet bool, mailChecks check.MailChecks) error {
+	if mailOnly && whoisOnly {
+		return fmt.Errorf("--mail and --whois cannot be used together")
+	}
+	if whoisOnly && (mailChecksSet || skipMailChecksSet) {
+		return fmt.Errorf("--whois cannot be used with --mail-checks or --skip-mail-checks")
+	}
 	if mailOnly && skipMail {
 		return fmt.Errorf("--mail and --skip-mail cannot be used together")
 	}
@@ -472,6 +487,7 @@ func writeSampleConfig(path string) error {
   "skip_redirect": false,
   "skip_mail": false,
   "skip_llms_txt": false,
+  "whois": false,
   "format": "dashboard",
   "expected_hosts": [],
   "mail_checks": [],

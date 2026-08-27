@@ -2,8 +2,7 @@ package check
 
 import (
 	"bytes"
-	"io"
-	"os"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -140,35 +139,21 @@ func TestDomainRegistrationStatus(t *testing.T) {
 }
 
 func TestLogDomainRegistrationDetailsIncludesExpiryDate(t *testing.T) {
-	oldStderr := os.Stderr
-	readPipe, writePipe, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe() unexpected error: %v", err)
+	var buf bytes.Buffer
+	verbose := func(format string, args ...any) {
+		fmt.Fprintf(&buf, format, args...)
 	}
-	defer func() {
-		os.Stderr = oldStderr
-		readPipe.Close()
-	}()
-
-	os.Stderr = writePipe
 
 	runner := &Runner{Verbose: true}
 	runner.logDomainRegistrationDetails(&DomainRegistrationResult{
 		Registrar: "Example Registrar",
 		ExpiresAt: "2028-09-14T04:00:00Z",
-	})
+	}, verbose)
 
-	writePipe.Close()
-
-	output, err := io.ReadAll(readPipe)
-	if err != nil {
-		t.Fatalf("io.ReadAll() unexpected error: %v", err)
-	}
-
-	if !bytes.Contains(output, []byte("registrar: Example Registrar")) {
+	if !bytes.Contains(buf.Bytes(), []byte("registrar: Example Registrar")) {
 		t.Error("verbose output missing registrar")
 	}
-	if !bytes.Contains(output, []byte("expiry date: 2028-09-14T04:00:00Z")) {
+	if !bytes.Contains(buf.Bytes(), []byte("expiry date: 2028-09-14T04:00:00Z")) {
 		t.Error("verbose output missing expiry date")
 	}
 }

@@ -11,27 +11,32 @@ import (
 
 func TestValidateOptions(t *testing.T) {
 	tests := []struct {
-		name    string
-		mail    bool
-		skip    bool
-		include bool
-		exclude bool
-		checks  check.MailChecks
-		wantErr bool
+		name      string
+		mail      bool
+		whois     bool
+		skip      bool
+		include   bool
+		exclude   bool
+		checks    check.MailChecks
+		wantErr   bool
 	}{
 		{name: "site mode", mail: false, skip: false, checks: check.DefaultMailChecks(), wantErr: false},
 		{name: "mail mode", mail: true, skip: false, checks: check.DefaultMailChecks(), wantErr: false},
+		{name: "whois mode", whois: true, skip: false, checks: check.DefaultMailChecks(), wantErr: false},
 		{name: "skip mail", mail: false, skip: true, checks: check.DefaultMailChecks(), wantErr: false},
 		{name: "mail skip conflict", mail: true, skip: true, checks: check.DefaultMailChecks(), wantErr: true},
 		{name: "skip mail with include conflict", skip: true, include: true, checks: check.MailChecks{SPF: true}, wantErr: true},
 		{name: "skip mail with exclude conflict", skip: true, exclude: true, checks: check.MailChecks{MX: true, DMARC: true}, wantErr: true},
 		{name: "include exclude conflict", include: true, exclude: true, checks: check.MailChecks{SPF: true}, wantErr: true},
 		{name: "empty selection", include: true, checks: check.MailChecks{}, wantErr: true},
+		{name: "mail whois conflict", mail: true, whois: true, checks: check.DefaultMailChecks(), wantErr: true},
+		{name: "whois with mail-checks conflict", whois: true, include: true, checks: check.MailChecks{SPF: true}, wantErr: true},
+		{name: "whois with skip-mail-checks conflict", whois: true, exclude: true, checks: check.MailChecks{MX: true, DMARC: true}, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateOptions(tt.mail, tt.skip, tt.include, tt.exclude, tt.checks)
+			err := validateOptions(tt.mail, tt.whois, tt.skip, tt.include, tt.exclude, tt.checks)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateOptions() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -271,6 +276,9 @@ func TestWriteSampleConfig(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"expected_hosts": []`) {
 		t.Errorf("sample config missing expected_hosts: %s", data)
+	}
+	if !strings.Contains(string(data), `"whois": false`) {
+		t.Errorf("sample config missing whois: %s", data)
 	}
 
 	if err := writeSampleConfig(path); err == nil {

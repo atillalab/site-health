@@ -231,6 +231,45 @@ func TestRenderMailDashboardOmitsSkippedChecks(t *testing.T) {
 	}
 }
 
+func TestRenderWhoisDashboard(t *testing.T) {
+	domainRegDays := 224
+	report := &check.Report{
+		Tool:    "site-health",
+		Version: "0.8",
+		Domain:  "example.com",
+		Mode:    "whois",
+		Checks: check.Checks{
+			DomainRegistration: &check.DomainRegistrationResult{
+				Status:        check.OK,
+				Registrar:     "Example Registrar",
+				ExpiresAt:     "2027-05-07T00:00:00Z",
+				DaysRemaining: &domainRegDays,
+			},
+		},
+		Summary: check.Summary{
+			Status:   "HEALTHY",
+			Failures: 0,
+			Warnings: 0,
+		},
+	}
+
+	var buf bytes.Buffer
+	RenderWhoisDashboard(&buf, report)
+
+	if !bytes.Contains(buf.Bytes(), []byte("WHOIS / Domain Registration")) {
+		t.Error("output missing 'WHOIS / Domain Registration'")
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("example.com")) {
+		t.Error("output missing domain")
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("Domain Reg   224 days (07 May 2027)")) {
+		t.Error("output missing domain registration expiry date and days")
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("Example Registrar")) {
+		t.Error("output missing registrar")
+	}
+}
+
 func TestRenderJSONOmitsSkippedMailChecks(t *testing.T) {
 	report := &check.Report{
 		Domain: "example.com",

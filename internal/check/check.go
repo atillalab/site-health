@@ -169,6 +169,7 @@ type Runner struct {
 	Domain        string
 	ExpectedHosts []string
 	MailOnly      bool
+	WhoisOnly     bool
 	Verbose       bool
 	SkipMail      bool
 	MailChecks    MailChecks
@@ -265,6 +266,16 @@ func (r *Runner) RunChecks(ctx context.Context) *Report {
 	r.failCount = 0
 	r.warnCount = 0
 	r.mu.Unlock()
+
+	if r.WhoisOnly {
+		domainRegResult := r.CheckDomainRegistration()
+		report := r.buildReport("whois")
+		report.Checks.DomainRegistration = domainRegResult
+		if report.Forwarding.Candidates == nil {
+			report.Forwarding.Candidates = []string{}
+		}
+		return report
+	}
 
 	if r.MailOnly {
 		mailResult := r.CheckMail()

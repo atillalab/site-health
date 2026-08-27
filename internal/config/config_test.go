@@ -96,6 +96,7 @@ func TestFromEnv(t *testing.T) {
 	t.Setenv("SITE_HEALTH_SKIP_REDIRECT", "1")
 	t.Setenv("SITE_HEALTH_SKIP_MAIL", "TRUE")
 	t.Setenv("SITE_HEALTH_SKIP_LLMS_TXT", "true")
+	t.Setenv("SITE_HEALTH_WHOIS", "true")
 	t.Setenv("SITE_HEALTH_FORMAT", "json")
 	t.Setenv("SITE_HEALTH_EXPECTED_HOSTS", "example.com, www.example.com")
 	t.Setenv("SITE_HEALTH_MAIL_CHECKS", "mx, dmarc")
@@ -115,6 +116,9 @@ func TestFromEnv(t *testing.T) {
 	if src.SkipLLMs == nil || !*src.SkipLLMs {
 		t.Errorf("skip_llms_txt = %v, want true", src.SkipLLMs)
 	}
+	if src.WhoisOnly == nil || !*src.WhoisOnly {
+		t.Errorf("whois = %v, want true", src.WhoisOnly)
+	}
 	if src.Format == nil || *src.Format != "json" {
 		t.Errorf("format = %v, want json", src.Format)
 	}
@@ -131,10 +135,14 @@ func TestFromEnv(t *testing.T) {
 
 func TestFromEnvIgnoresInvalidBooleans(t *testing.T) {
 	t.Setenv("SITE_HEALTH_VERBOSE", "not-a-bool")
+	t.Setenv("SITE_HEALTH_WHOIS", "not-a-bool")
 
 	src := FromEnv()
 	if src.Verbose != nil {
 		t.Errorf("verbose = %v, want nil", src.Verbose)
+	}
+	if src.WhoisOnly != nil {
+		t.Errorf("whois = %v, want nil", src.WhoisOnly)
 	}
 }
 
