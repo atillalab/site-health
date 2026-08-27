@@ -16,11 +16,13 @@
 - Version is defined in `internal/version/version.go`.
 - README examples include the current version and should be kept in sync.
 - Homebrew formula lives in sibling repo `../homebrew-tap/Formula/site-health.rb`.
+- Whenever `internal/version/version.go` is updated, update the Homebrew tap formula for the same version.
 - For a release:
   - commit changes in this repo
   - tag and push `vX.Y.Z`
   - compute the GitHub source tarball SHA
-  - update and push the Homebrew tap formula
+  - update the Homebrew tap formula with the matching tag and SHA
+  - commit and push the Homebrew tap formula
 
 ## Constraints
 
