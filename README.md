@@ -12,6 +12,7 @@ site-health --verbose example.com
 site-health --mail example.com
 site-health --skip-mail example.com
 site-health --mail-checks spf example.com
+site-health --skip-redirect example.com
 site-health --format json example.com
 ```
 
@@ -38,6 +39,7 @@ Zero external dependencies — stdlib only:
 - Mail checks skippable in site mode with `--skip-mail`
 - Individual mail checks selectable with `--mail-checks` and `--skip-mail-checks`
 - Optional `/llms.txt` availability check (skippable with `--skip-llms-txt`)
+- Canonical redirect check skippable with `--skip-redirect`
 - Machine-readable JSON output for automation and monitoring
 
 ## Usage
@@ -154,6 +156,14 @@ Skip the optional `/llms.txt` check:
 ```bash
 site-health --skip-llms-txt example.com
 ```
+
+Skip the canonical redirect check when the site intentionally serves the same content from multiple URL variants (for example, both `https://example.com` and `https://www.example.com`):
+
+```bash
+site-health --skip-redirect example.com
+```
+
+This keeps HTTPS, response-time, and SSL checks running, but does not enforce a single canonical URL. Use it for domains where redirecting every variant to one URL is not desired.
 
 Forwarded domains are detected automatically when the final URL is unambiguous:
 
