@@ -2,7 +2,7 @@
 
 A fast CLI for checking website and domain health.
 
-> **Status:** Go rewrite complete (v0.9.2)
+> **Status:** Go rewrite complete (v0.9.3)
 
 ## Quick Start
 
@@ -11,6 +11,7 @@ site-health example.com
 site-health --verbose example.com
 site-health --mail example.com
 site-health --skip-mail example.com
+site-health --mail-checks spf example.com
 site-health --format json example.com
 ```
 
@@ -35,6 +36,7 @@ Zero external dependencies — stdlib only:
 - SPF TXT record validation
 - DMARC TXT record validation
 - Mail checks skippable in site mode with `--skip-mail`
+- Individual mail checks selectable with `--mail-checks` and `--skip-mail-checks`
 - Optional `/llms.txt` availability check (skippable with `--skip-llms-txt`)
 - Machine-readable JSON output for automation and monitoring
 
@@ -120,6 +122,23 @@ Show detailed mail diagnostics:
 site-health --mail --verbose example.com
 ```
 
+Run only selected mail checks:
+
+```bash
+site-health --mail-checks spf example.com
+site-health --mail-checks mx,dmarc example.com
+site-health --mail --mail-checks spf example.com
+```
+
+Skip selected mail checks:
+
+```bash
+site-health --skip-mail-checks spf example.com
+site-health --mail --skip-mail-checks spf example.com
+```
+
+The supported mail check names are `mx`, `spf`, and `dmarc`. `--mail-checks` and `--skip-mail-checks` filter the mail portion of the current run. Use them with `--mail` for mail-only output, or without `--mail` for a full site health run with filtered mail checks. Use `--skip-mail` when you want a full site health run without mail checks.
+
 Skip mail-related DNS checks in a full site health run:
 
 ```bash
@@ -157,7 +176,7 @@ Example:
 ```json
 {
   "tool": "site-health",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "domain": "example.com",
   "mode": "site",
   "expected_url": "https://example.com/",
@@ -190,7 +209,7 @@ Example:
 }
 ```
 
-In mail-only mode, the `checks` object contains just the `mail` block and the top-level `mode` is `"mail"`. When mail checks are skipped with `--skip-mail`, the `mail` block is omitted.
+In mail-only mode, the `checks` object contains just the `mail` block and the top-level `mode` is `"mail"`. When mail checks are skipped with `--skip-mail`, the `mail` block is omitted. When individual mail checks are skipped with `--mail-checks` or `--skip-mail-checks`, only the enabled mail subchecks appear under `checks.mail`.
 
 ## Installation
 

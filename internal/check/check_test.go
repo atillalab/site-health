@@ -164,6 +164,36 @@ func TestRunnerShouldRunMailChecks(t *testing.T) {
 	}
 }
 
+func TestMailChecksEnabledCount(t *testing.T) {
+	tests := []struct {
+		name     string
+		checks   MailChecks
+		expected int
+	}{
+		{name: "none", checks: MailChecks{}, expected: 0},
+		{name: "one", checks: MailChecks{SPF: true}, expected: 1},
+		{name: "all", checks: DefaultMailChecks(), expected: 3},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.checks.EnabledCount()
+			if result != tt.expected {
+				t.Errorf("EnabledCount() = %d, want %d", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestRunnerEnabledMailChecksDefaultsToAll(t *testing.T) {
+	runner := Runner{}
+	result := runner.enabledMailChecks()
+
+	if result != DefaultMailChecks() {
+		t.Errorf("enabledMailChecks() = %+v, want %+v", result, DefaultMailChecks())
+	}
+}
+
 func TestRunnerBuildReport(t *testing.T) {
 	r := &Runner{
 		Domain:      "example.com",

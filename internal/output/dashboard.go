@@ -63,9 +63,15 @@ func RenderMailDashboard(w io.Writer, report *check.Report) {
 	fmt.Fprintf(w, "● %s\n", report.Domain)
 
 	if report.Checks.Mail != nil {
-		renderSimpleRow(w, "MX", report.Checks.Mail.MX.Status.String())
-		renderSimpleRow(w, "SPF", report.Checks.Mail.SPF.Status.String())
-		renderSimpleRow(w, "DMARC", report.Checks.Mail.DMARC.Status.String())
+		if report.Checks.Mail.MX != nil {
+			renderSimpleRow(w, "MX", report.Checks.Mail.MX.Status.String())
+		}
+		if report.Checks.Mail.SPF != nil {
+			renderSimpleRow(w, "SPF", report.Checks.Mail.SPF.Status.String())
+		}
+		if report.Checks.Mail.DMARC != nil {
+			renderSimpleRow(w, "DMARC", report.Checks.Mail.DMARC.Status.String())
+		}
 	}
 
 	fmt.Fprintf(w, "Status: %s%s%s\n", statusColor(report.Summary.Status), report.Summary.Status, reset)

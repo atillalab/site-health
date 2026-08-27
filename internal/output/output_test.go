@@ -63,3 +63,68 @@ func TestRenderDashboard(t *testing.T) {
 		t.Error("output missing domain")
 	}
 }
+
+func TestRenderMailDashboardOmitsSkippedChecks(t *testing.T) {
+	report := &check.Report{
+		Domain: "example.com",
+		Mode:   "mail",
+		Checks: check.Checks{
+			Mail: &check.MailResult{
+				Status: check.OK,
+				SPF:    &check.SPFResult{Status: check.OK},
+			},
+		},
+		Summary: check.Summary{Status: "HEALTHY"},
+	}
+
+	var buf bytes.Buffer
+	RenderMailDashboard(&buf, report)
+
+	if bytes.Contains(buf.Bytes(), []byte("MX")) {
+		t.Error("output includes skipped MX row")
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("SPF")) {
+		t.Error("output missing SPF row")
+	}
+	if bytes.Contains(buf.Bytes(), []byte("DMARC")) {
+		t.Error("output includes skipped DMARC row")
+	}
+}
+
+func TestRenderJSONOmitsSkippedMailChecks(t *testing.T) {
+	report := &check.Report{
+		Domain: "example.com",
+		Mode:   "mail",
+		Checks: check.Checks{
+			Mail: &check.MailResult{
+				Status: check.OK,
+				SPF:    &check.SPFResult{Status: check.OK},
+			},
+		},
+		Summary: check.Summary{Status: "HEALTHY"},
+	}
+
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, report); err != nil {
+		t.Fatalf("RenderJSON() unexpected error: %v", err)
+	}
+
+	var result struct {
+		Checks struct {
+			Mail map[string]any `json:"mail"`
+		} `json:"checks"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v", err)
+	}
+
+	if _, ok := result.Checks.Mail["mx"]; ok {
+		t.Error("JSON includes skipped mx check")
+	}
+	if _, ok := result.Checks.Mail["spf"]; !ok {
+		t.Error("JSON missing spf check")
+	}
+	if _, ok := result.Checks.Mail["dmarc"]; ok {
+		t.Error("JSON includes skipped dmarc check")
+	}
+}

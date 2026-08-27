@@ -218,19 +218,25 @@ func (r *Runner) CheckDMARC() DMARCResult {
 }
 
 func (r *Runner) CheckMail() *MailResult {
-	mx := r.CheckMX()
-	spf := r.CheckSPF()
-	dmarc := r.CheckDMARC()
-
+	enabled := r.enabledMailChecks()
 	status := OK
-	status = Escalate(status, mx.Status)
-	status = Escalate(status, spf.Status)
-	status = Escalate(status, dmarc.Status)
+	result := &MailResult{Status: status}
 
-	return &MailResult{
-		Status: status,
-		MX:     mx,
-		SPF:    spf,
-		DMARC:  dmarc,
+	if enabled.MX {
+		mx := r.CheckMX()
+		result.MX = &mx
+		result.Status = Escalate(result.Status, mx.Status)
 	}
+	if enabled.SPF {
+		spf := r.CheckSPF()
+		result.SPF = &spf
+		result.Status = Escalate(result.Status, spf.Status)
+	}
+	if enabled.DMARC {
+		dmarc := r.CheckDMARC()
+		result.DMARC = &dmarc
+		result.Status = Escalate(result.Status, dmarc.Status)
+	}
+
+	return result
 }

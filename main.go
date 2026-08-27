@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/atillalab/site-health/internal/check"
@@ -13,19 +14,41 @@ import (
 	"github.com/atillalab/site-health/internal/version"
 )
 
+type mailCheckListFlag struct {
+	value string
+	set   bool
+}
+
+func (f *mailCheckListFlag) String() string {
+	return f.value
+}
+
+func (f *mailCheckListFlag) Set(value string) error {
+	f.value = value
+	f.set = true
+	return nil
+}
+
 func main() {
+	var mailChecks mailCheckListFlag
+	var skipMailChecks mailCheckListFlag
+
 	mailOnly := flag.Bool("mail", false, "Run only mail-related DNS checks")
 	verbose := flag.Bool("verbose", false, "Show detailed troubleshooting diagnostics")
 	format := flag.String("format", "dashboard", "Output format: dashboard or json")
 	expectedURL := flag.String("expected-url", "", "Expected final URL after redirects")
 	skipMail := flag.Bool("skip-mail", false, "Skip mail-related DNS checks in site mode")
+	flag.Var(&mailChecks, "mail-checks", "Comma-separated mail checks to run: mx, spf, dmarc")
+	flag.Var(&skipMailChecks, "skip-mail-checks", "Comma-separated mail checks to skip: mx, spf, dmarc")
 	skipLLMs := flag.Bool("skip-llms-txt", false, "Skip the optional /llms.txt check")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--skip-mail] [--skip-llms-txt] [--format <dashboard|json>] [--version] <domain>\n")
+		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--format <dashboard|json>] [--version] <domain>\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail example.com\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health --mail-checks spf example.com\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health --skip-mail-checks spf example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --verbose example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-mail example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-llms-txt example.com\n")
@@ -46,7 +69,13 @@ func main() {
 		os.Exit(2)
 	}
 
-	if err := validateOptions(*mailOnly, *skipMail); err != nil {
+	selectedMailChecks, err := resolveMailChecks(mailChecks, skipMailChecks)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(2)
+	}
+
+	if err := validateOptions(*mailOnly, *skipMail, mailChecks.set, skipMailChecks.set, selectedMailChecks); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(2)
 	}
@@ -74,11 +103,12 @@ func main() {
 	}
 
 	runner := &check.Runner{
-		Domain:   domainName,
-		MailOnly: *mailOnly,
-		Verbose:  *verbose,
-		SkipMail: *skipMail,
-		SkipLLMs: *skipLLMs,
+		Domain:     domainName,
+		MailOnly:   *mailOnly,
+		Verbose:    *verbose,
+		SkipMail:   *skipMail,
+		MailChecks: selectedMailChecks,
+		SkipLLMs:   *skipLLMs,
 	}
 
 	if *expectedURL != "" {
@@ -124,11 +154,64 @@ func main() {
 	os.Exit(0)
 }
 
-func validateOptions(mailOnly, skipMail bool) error {
+func validateOptions(mailOnly, skipMail, mailChecksSet, skipMailChecksSet bool, mailChecks check.MailChecks) error {
 	if mailOnly && skipMail {
 		return fmt.Errorf("--mail and --skip-mail cannot be used together")
 	}
+	if skipMail && (mailChecksSet || skipMailChecksSet) {
+		return fmt.Errorf("--skip-mail cannot be used with --mail-checks or --skip-mail-checks")
+	}
+	if mailChecksSet && skipMailChecksSet {
+		return fmt.Errorf("--mail-checks and --skip-mail-checks cannot be used together")
+	}
+	if (mailChecksSet || skipMailChecksSet) && mailChecks.EnabledCount() == 0 {
+		return fmt.Errorf("no mail checks selected; use --skip-mail to skip all mail checks in site mode")
+	}
 	return nil
+}
+
+func resolveMailChecks(mailChecks, skipMailChecks mailCheckListFlag) (check.MailChecks, error) {
+	if mailChecks.set {
+		return parseMailCheckList(mailChecks.value)
+	}
+
+	selected := check.DefaultMailChecks()
+	if skipMailChecks.set {
+		skipped, err := parseMailCheckList(skipMailChecks.value)
+		if err != nil {
+			return check.MailChecks{}, err
+		}
+		selected.MX = selected.MX && !skipped.MX
+		selected.SPF = selected.SPF && !skipped.SPF
+		selected.DMARC = selected.DMARC && !skipped.DMARC
+	}
+
+	return selected, nil
+}
+
+func parseMailCheckList(value string) (check.MailChecks, error) {
+	var checks check.MailChecks
+	if strings.TrimSpace(value) == "" {
+		return checks, fmt.Errorf("mail check list cannot be empty")
+	}
+
+	for _, part := range strings.Split(value, ",") {
+		name := strings.ToLower(strings.TrimSpace(part))
+		switch name {
+		case "":
+			return check.MailChecks{}, fmt.Errorf("mail check list cannot contain empty values")
+		case "mx":
+			checks.MX = true
+		case "spf":
+			checks.SPF = true
+		case "dmarc":
+			checks.DMARC = true
+		default:
+			return check.MailChecks{}, fmt.Errorf("unknown mail check %q; supported checks: mx, spf, dmarc", name)
+		}
+	}
+
+	return checks, nil
 }
 
 func detectForwarding(ctx context.Context, runner *check.Runner) {

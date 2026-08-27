@@ -111,10 +111,10 @@ type DomainRegistrationResult struct {
 }
 
 type MailResult struct {
-	Status Status      `json:"status"`
-	MX     MXResult    `json:"mx"`
-	SPF    SPFResult   `json:"spf"`
-	DMARC  DMARCResult `json:"dmarc"`
+	Status Status       `json:"status"`
+	MX     *MXResult    `json:"mx,omitempty"`
+	SPF    *SPFResult   `json:"spf,omitempty"`
+	DMARC  *DMARCResult `json:"dmarc,omitempty"`
 }
 
 type MXResult struct {
@@ -132,12 +132,37 @@ type DMARCResult struct {
 	Records []string `json:"records"`
 }
 
+type MailChecks struct {
+	MX    bool
+	SPF   bool
+	DMARC bool
+}
+
+func DefaultMailChecks() MailChecks {
+	return MailChecks{MX: true, SPF: true, DMARC: true}
+}
+
+func (m MailChecks) EnabledCount() int {
+	count := 0
+	if m.MX {
+		count++
+	}
+	if m.SPF {
+		count++
+	}
+	if m.DMARC {
+		count++
+	}
+	return count
+}
+
 type Runner struct {
 	Domain      string
 	ExpectedURL string
 	MailOnly    bool
 	Verbose     bool
 	SkipMail    bool
+	MailChecks  MailChecks
 	SkipLLMs    bool
 
 	ForwardingAutoDetected bool
@@ -193,6 +218,13 @@ func (r *Runner) OverallStatus() string {
 
 func (r *Runner) shouldRunMailChecks() bool {
 	return !r.SkipMail && !domain.IsSubdomain(r.Domain)
+}
+
+func (r *Runner) enabledMailChecks() MailChecks {
+	if r.MailChecks.EnabledCount() == 0 {
+		return DefaultMailChecks()
+	}
+	return r.MailChecks
 }
 
 func (r *Runner) buildReport(mode string) *Report {
