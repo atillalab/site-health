@@ -27,6 +27,54 @@ func TestGetTLDDomain(t *testing.T) {
 	}
 }
 
+func TestIANAWhoisReferral(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "refer",
+			input:    "refer: whois.example",
+			expected: "whois.example",
+		},
+		{
+			name:     "whois",
+			input:    "whois: whois.nic.sh",
+			expected: "whois.nic.sh",
+		},
+		{
+			name:     "whois server",
+			input:    "Whois Server: whois.example",
+			expected: "whois.example",
+		},
+		{
+			name:     "mixed case and whitespace",
+			input:    "  WhOiS SeRvEr  :  whois.example.net  ",
+			expected: "whois.example.net",
+		},
+		{
+			name:     "unrelated field",
+			input:    "remarks: Registration information: https://example.test/",
+			expected: "",
+		},
+		{
+			name:     "not colon delimited",
+			input:    "whois.example",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ianaWhoisReferral(tt.input)
+			if result != tt.expected {
+				t.Errorf("ianaWhoisReferral(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestParseExpiryDate(t *testing.T) {
 	tests := []struct {
 		input   string

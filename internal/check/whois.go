@@ -14,68 +14,68 @@ import (
 const whoisTimeout = 10 * time.Second
 
 var whoisServers = map[string]string{
-	"com": "whois.verisign-grs.com",
-	"net": "whois.verisign-grs.com",
-	"org": "whois.pir.org",
+	"com":  "whois.verisign-grs.com",
+	"net":  "whois.verisign-grs.com",
+	"org":  "whois.pir.org",
 	"info": "whois.afilias.net",
-	"io": "whois.nic.io",
-	"co": "whois.nic.co",
-	"de": "whois.denic.de",
-	"uk": "whois.nic.uk",
-	"nl": "whois.sidn.nl",
-	"be": "whois.dns.be",
-	"fr": "whois.nic.fr",
-	"it": "whois.nic.it",
-	"es": "whois.nic.es",
-	"pt": "whois.dns.pt",
-	"ch": "whois.nic.ch",
-	"at": "whois.nic.at",
-	"pl": "whois.dns.pl",
-	"se": "whois.iis.se",
-	"no": "whois.norid.no",
-	"dk": "whois.dk-hostmaster.dk",
-	"fi": "whois.fi",
-	"cz": "whois.nic.cz",
-	"sk": "whois.sk-nic.sk",
-	"hu": "whois.nic.hu",
-	"ro": "whois.rotld.ro",
-	"bg": "whois.register.bg",
-	"hr": "whois.dns.hr",
-	"si": "whois.arnes.si",
-	"lt": "whois.domreg.lt",
-	"lv": "whois.nic.lv",
-	"ee": "whois.eestihosting.ee",
-	"ie": "whois.weare.ie",
-	"nz": "whois.srs.net.nz",
-	"au": "whois.auda.org.au",
-	"ca": "whois.cira.ca",
-	"jp": "whois.jprs.jp",
-	"kr": "whois.kr",
-	"cn": "whois.cnnic.cn",
-	"in": "whois.inregistry.net",
-	"br": "whois.registro.br",
-	"mx": "whois.nic.mx",
-	"cl": "whois.nic.cl",
-	"ar": "whois.nic.ar",
-	"za": "whois.registry.net.za",
-	"ru": "whois.tcinet.ru",
-	"ua": "whois.ua",
-	"tr": "whois.nic.tr",
-	"th": "whois.thnic.co.th",
-	"ph": "whois.dot.ph",
-	"sg": "whois.sgnic.sg",
-	"hk": "whois.hkirc.hk",
-	"tw": "whois.twnic.net.tw",
-	"my": "whois.mynic.my",
-	"id": "whois.id",
-	"vn": "whois.vnnic.vn",
-	"pk": "whois.pknic.net.pk",
-	"ke": "whois.kenic.or.ke",
-	"ng": "whois.nic.net.ng",
-	"eg": "whois.ripe.net",
-	"ae": "whois.aedns.ae",
-	"sa": "whois.nic.sa",
-	"il": "whois.isoc.org.il",
+	"io":   "whois.nic.io",
+	"co":   "whois.nic.co",
+	"de":   "whois.denic.de",
+	"uk":   "whois.nic.uk",
+	"nl":   "whois.sidn.nl",
+	"be":   "whois.dns.be",
+	"fr":   "whois.nic.fr",
+	"it":   "whois.nic.it",
+	"es":   "whois.nic.es",
+	"pt":   "whois.dns.pt",
+	"ch":   "whois.nic.ch",
+	"at":   "whois.nic.at",
+	"pl":   "whois.dns.pl",
+	"se":   "whois.iis.se",
+	"no":   "whois.norid.no",
+	"dk":   "whois.dk-hostmaster.dk",
+	"fi":   "whois.fi",
+	"cz":   "whois.nic.cz",
+	"sk":   "whois.sk-nic.sk",
+	"hu":   "whois.nic.hu",
+	"ro":   "whois.rotld.ro",
+	"bg":   "whois.register.bg",
+	"hr":   "whois.dns.hr",
+	"si":   "whois.arnes.si",
+	"lt":   "whois.domreg.lt",
+	"lv":   "whois.nic.lv",
+	"ee":   "whois.eestihosting.ee",
+	"ie":   "whois.weare.ie",
+	"nz":   "whois.srs.net.nz",
+	"au":   "whois.auda.org.au",
+	"ca":   "whois.cira.ca",
+	"jp":   "whois.jprs.jp",
+	"kr":   "whois.kr",
+	"cn":   "whois.cnnic.cn",
+	"in":   "whois.inregistry.net",
+	"br":   "whois.registro.br",
+	"mx":   "whois.nic.mx",
+	"cl":   "whois.nic.cl",
+	"ar":   "whois.nic.ar",
+	"za":   "whois.registry.net.za",
+	"ru":   "whois.tcinet.ru",
+	"ua":   "whois.ua",
+	"tr":   "whois.nic.tr",
+	"th":   "whois.thnic.co.th",
+	"ph":   "whois.dot.ph",
+	"sg":   "whois.sgnic.sg",
+	"hk":   "whois.hkirc.hk",
+	"tw":   "whois.twnic.net.tw",
+	"my":   "whois.mynic.my",
+	"id":   "whois.id",
+	"vn":   "whois.vnnic.vn",
+	"pk":   "whois.pknic.net.pk",
+	"ke":   "whois.kenic.or.ke",
+	"ng":   "whois.nic.net.ng",
+	"eg":   "whois.ripe.net",
+	"ae":   "whois.aedns.ae",
+	"sa":   "whois.nic.sa",
+	"il":   "whois.isoc.org.il",
 }
 
 var expiryFieldRegex = regexp.MustCompile(`(?i)^\s*(registry expiry date|registrar registration expiration date|expiration date|expiry date|paid-till|validity)\s*:\s*(.+)$`)
@@ -103,6 +103,20 @@ func getTLDDomain(domain string) string {
 	return parts[len(parts)-1]
 }
 
+func ianaWhoisReferral(line string) string {
+	key, value, ok := strings.Cut(strings.TrimSpace(line), ":")
+	if !ok {
+		return ""
+	}
+
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "refer", "whois", "whois server":
+		return strings.TrimSpace(value)
+	default:
+		return ""
+	}
+}
+
 func getAuthoritativeWhoisServer(tld string) (string, error) {
 	conn, err := net.DialTimeout("tcp", "whois.iana.org:43", whoisTimeout)
 	if err != nil {
@@ -117,12 +131,8 @@ func getAuthoritativeWhoisServer(tld string) (string, error) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(strings.TrimSpace(line), "refer:") ||
-			strings.HasPrefix(strings.TrimSpace(line), "Whois Server:") {
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				return strings.TrimSpace(parts[1]), nil
-			}
+		if server := ianaWhoisReferral(line); server != "" {
+			return server, nil
 		}
 	}
 
