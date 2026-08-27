@@ -5,15 +5,52 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/atillalab/site-health/internal/check"
+	"github.com/atillalab/site-health/internal/config"
 	"github.com/atillalab/site-health/internal/doctor"
 	"github.com/atillalab/site-health/internal/domain"
 	"github.com/atillalab/site-health/internal/output"
 	"github.com/atillalab/site-health/internal/version"
 )
+
+type boolFlag struct {
+	value bool
+	set   bool
+}
+
+func (f *boolFlag) String() string { return strconv.FormatBool(f.value) }
+
+func (f *boolFlag) Set(value string) error {
+	v, err := strconv.ParseBool(value)
+	if err != nil {
+		return err
+	}
+	f.value = v
+	f.set = true
+	return nil
+}
+
+// IsBoolFlag tells the flag package that this flag does not require a value.
+// It allows forms like --skip-redirect instead of requiring --skip-redirect=true.
+func (f *boolFlag) IsBoolFlag() bool { return true }
+
+type stringFlag struct {
+	value string
+	set   bool
+}
+
+func (f *stringFlag) String() string { return f.value }
+
+func (f *stringFlag) Set(value string) error {
+	f.value = value
+	f.set = true
+	return nil
+}
 
 type mailCheckListFlag struct {
 	value string
@@ -31,23 +68,33 @@ func (f *mailCheckListFlag) Set(value string) error {
 }
 
 func main() {
-	var mailChecks mailCheckListFlag
-	var skipMailChecks mailCheckListFlag
+	var (
+		verbose        boolFlag
+		format         stringFlag
+		skipMail       boolFlag
+		skipLLMs       boolFlag
+		skipRedirect   boolFlag
+		mailChecks     mailCheckListFlag
+		skipMailChecks mailCheckListFlag
+	)
+	format.value = "dashboard"
 
+	configPath := flag.String("config", "", "Path to config file (default $XDG_CONFIG_HOME/site-health/config.json)")
 	mailOnly := flag.Bool("mail", false, "Run only mail-related DNS checks")
-	verbose := flag.Bool("verbose", false, "Show detailed troubleshooting diagnostics")
-	format := flag.String("format", "dashboard", "Output format: dashboard or json")
+	flag.Var(&verbose, "verbose", "Show detailed troubleshooting diagnostics")
+	flag.Var(&format, "format", "Output format: dashboard or json")
 	expectedURL := flag.String("expected-url", "", "Expected final URL after redirects")
-	skipMail := flag.Bool("skip-mail", false, "Skip mail-related DNS checks in site mode")
+	flag.Var(&skipMail, "skip-mail", "Skip mail-related DNS checks in site mode")
 	flag.Var(&mailChecks, "mail-checks", "Comma-separated mail checks to run: mx, spf, dmarc")
 	flag.Var(&skipMailChecks, "skip-mail-checks", "Comma-separated mail checks to skip: mx, spf, dmarc")
-	skipLLMs := flag.Bool("skip-llms-txt", false, "Skip the optional /llms.txt check")
-	skipRedirect := flag.Bool("skip-redirect", false, "Skip the canonical redirect check")
+	flag.Var(&skipLLMs, "skip-llms-txt", "Skip the optional /llms.txt check")
+	flag.Var(&skipRedirect, "skip-redirect", "Skip the canonical redirect check")
 	showVersion := flag.Bool("version", false, "Show version and exit")
+	initConfig := flag.Bool("init-config", false, "Write a sample config file and exit")
 	doctorMode := flag.Bool("doctor", false, "Run self-diagnostics for the binary and environment")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--skip-redirect] [--format <dashboard|json>] [--doctor] [--version] [<domain>]\n")
+		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--skip-redirect] [--format <dashboard|json>] [--config <path>] [--init-config] [--doctor] [--version] [<domain>]\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail-checks spf example.com\n")
@@ -58,6 +105,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-redirect example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --expected-url https://example.org/ example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --format json example.com\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health --init-config\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --doctor\n")
 	}
 
@@ -68,32 +116,73 @@ func main() {
 		os.Exit(0)
 	}
 
+	cfgPath := *configPath
+	if cfgPath == "" {
+		cfgPath = config.DefaultPath()
+	}
+
+	if *initConfig {
+		if err := writeSampleConfig(cfgPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(2)
+		}
+		fmt.Printf("Created sample config: %s\n", cfgPath)
+		os.Exit(0)
+	}
+
 	if *doctorMode {
-		runDoctor()
+		runDoctor(cfgPath)
 		return
 	}
 
-	if *format != "dashboard" && *format != "json" && *format != "text" {
-		fmt.Fprintf(os.Stderr, "Error: Unknown format: %s\n", *format)
+	fileCfg, err := config.Load(cfgPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid config file %s: %v\n", cfgPath, err)
+		os.Exit(2)
+	}
+	envCfg := config.FromEnv()
+
+	resolvedFormat := config.MergeString(format.value, format.set, "dashboard", envCfg.Format, fileCfg.Format)
+	if resolvedFormat == "text" {
+		resolvedFormat = "dashboard"
+	}
+	if resolvedFormat != "dashboard" && resolvedFormat != "json" {
+		fmt.Fprintf(os.Stderr, "Error: Unknown format: %s\n", resolvedFormat)
 		fmt.Fprintf(os.Stderr, "Supported formats: dashboard, json\n")
 		os.Exit(2)
 	}
 
-	selectedMailChecks, err := resolveMailChecks(mailChecks, skipMailChecks)
+	resolvedVerbose := config.MergeBool(verbose.value, verbose.set, false, envCfg.Verbose, fileCfg.Verbose)
+	verboseEnabled := effectiveVerbose(resolvedVerbose, resolvedFormat)
+
+	resolvedSkipMail := config.MergeBool(skipMail.value, skipMail.set, false, envCfg.SkipMail, fileCfg.SkipMail)
+	resolvedSkipLLMs := config.MergeBool(skipLLMs.value, skipLLMs.set, false, envCfg.SkipLLMs, fileCfg.SkipLLMs)
+	resolvedSkipRedirect := config.MergeBool(skipRedirect.value, skipRedirect.set, false, envCfg.SkipRedirect, fileCfg.SkipRedirect)
+
+	mailCheckNames := splitMailCheckString(mailChecks.value)
+	mailCheckNames = config.MergeStringSlice(mailCheckNames, mailChecks.set, envCfg.MailChecks, fileCfg.MailChecks)
+	mailChecksSet := mailChecks.set || len(mailCheckNames) > 0
+
+	skipMailCheckNames := splitMailCheckString(skipMailChecks.value)
+	skipMailCheckNames = config.MergeStringSlice(skipMailCheckNames, skipMailChecks.set, envCfg.SkipMailChecks, fileCfg.SkipMailChecks)
+	skipMailChecksSet := skipMailChecks.set || len(skipMailCheckNames) > 0
+
+	selectedMailChecks, err := resolveMailChecks(mailCheckNames, mailChecksSet, skipMailCheckNames, skipMailChecksSet)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(2)
 	}
 
-	if err := validateOptions(*mailOnly, *skipMail, mailChecks.set, skipMailChecks.set, selectedMailChecks); err != nil {
+	if err := validateOptions(*mailOnly, resolvedSkipMail, mailChecksSet, skipMailChecksSet, selectedMailChecks); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(2)
 	}
 
-	if *format == "text" {
-		*format = "dashboard"
+	if verboseEnabled && cfgPath != "" {
+		if _, statErr := os.Stat(cfgPath); statErr == nil {
+			fmt.Fprintf(os.Stderr, "Using config: %s\n", cfgPath)
+		}
 	}
-	verboseEnabled := effectiveVerbose(*verbose, *format)
 
 	args := flag.Args()
 	if len(args) == 0 {
@@ -117,10 +206,10 @@ func main() {
 		Domain:       domainName,
 		MailOnly:     *mailOnly,
 		Verbose:      verboseEnabled,
-		SkipMail:     *skipMail,
+		SkipMail:     resolvedSkipMail,
 		MailChecks:   selectedMailChecks,
-		SkipLLMs:     *skipLLMs,
-		SkipRedirect: *skipRedirect,
+		SkipLLMs:     resolvedSkipLLMs,
+		SkipRedirect: resolvedSkipRedirect,
 	}
 
 	if *expectedURL != "" {
@@ -146,7 +235,7 @@ func main() {
 		report.Mode = "site"
 	}
 
-	if *format == "json" {
+	if resolvedFormat == "json" {
 		output.RenderJSON(os.Stdout, report)
 		if report.Summary.Failures > 0 {
 			os.Exit(1)
@@ -186,14 +275,14 @@ func effectiveVerbose(verbose bool, format string) bool {
 	return verbose && format != "json"
 }
 
-func resolveMailChecks(mailChecks, skipMailChecks mailCheckListFlag) (check.MailChecks, error) {
-	if mailChecks.set {
-		return parseMailCheckList(mailChecks.value)
+func resolveMailChecks(include []string, includeSet bool, exclude []string, excludeSet bool) (check.MailChecks, error) {
+	if includeSet {
+		return parseMailCheckSlice(include)
 	}
 
 	selected := check.DefaultMailChecks()
-	if skipMailChecks.set {
-		skipped, err := parseMailCheckList(skipMailChecks.value)
+	if excludeSet {
+		skipped, err := parseMailCheckSlice(exclude)
 		if err != nil {
 			return check.MailChecks{}, err
 		}
@@ -206,16 +295,32 @@ func resolveMailChecks(mailChecks, skipMailChecks mailCheckListFlag) (check.Mail
 }
 
 func parseMailCheckList(value string) (check.MailChecks, error) {
-	var checks check.MailChecks
 	if strings.TrimSpace(value) == "" {
-		return checks, fmt.Errorf("mail check list cannot be empty")
+		return check.MailChecks{}, fmt.Errorf("mail check list cannot be empty")
 	}
 
+	var names []string
 	for _, part := range strings.Split(value, ",") {
 		name := strings.ToLower(strings.TrimSpace(part))
 		switch name {
 		case "":
 			return check.MailChecks{}, fmt.Errorf("mail check list cannot contain empty values")
+		default:
+			names = append(names, name)
+		}
+	}
+
+	return parseMailCheckSlice(names)
+}
+
+func parseMailCheckSlice(names []string) (check.MailChecks, error) {
+	if len(names) == 0 {
+		return check.MailChecks{}, fmt.Errorf("mail check list cannot be empty")
+	}
+
+	var checks check.MailChecks
+	for _, name := range names {
+		switch name {
 		case "mx":
 			checks.MX = true
 		case "spf":
@@ -228,6 +333,17 @@ func parseMailCheckList(value string) (check.MailChecks, error) {
 	}
 
 	return checks, nil
+}
+
+func splitMailCheckString(value string) []string {
+	var out []string
+	for _, part := range strings.Split(value, ",") {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			out = append(out, strings.ToLower(trimmed))
+		}
+	}
+	return out
 }
 
 func detectForwarding(ctx context.Context, runner *check.Runner) {
@@ -295,9 +411,43 @@ func detectForwarding(ctx context.Context, runner *check.Runner) {
 	}
 }
 
-func runDoctor() {
+func writeSampleConfig(path string) error {
+	if path == "" {
+		return fmt.Errorf("could not determine config path")
+	}
+
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("config file already exists: %s", path)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("cannot access config path: %w", err)
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("cannot create config directory: %w", err)
+	}
+
+	sample := `{
+  "verbose": false,
+  "skip_redirect": false,
+  "skip_mail": false,
+  "skip_llms_txt": false,
+  "format": "dashboard",
+  "mail_checks": [],
+  "skip_mail_checks": []
+}
+`
+
+	if err := os.WriteFile(path, []byte(sample), 0o644); err != nil {
+		return fmt.Errorf("cannot write config file: %w", err)
+	}
+	return nil
+}
+
+func runDoctor(configPath string) {
 	ctx := context.Background()
 	checker := doctor.NewChecker()
+	checker.ConfigPath = configPath
 	report := checker.Run(ctx)
 	doctor.Render(os.Stdout, report)
 

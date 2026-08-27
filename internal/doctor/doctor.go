@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atillalab/site-health/internal/config"
 	"github.com/atillalab/site-health/internal/output"
 	"github.com/atillalab/site-health/internal/version"
 )
@@ -58,6 +59,7 @@ type Checker struct {
 	HTTPClient      *http.Client
 	ReleasesURL     string
 	ProbeURL        string
+	ConfigPath      string
 	LookupHostFunc  func(ctx context.Context, host string) ([]string, error)
 	LookupTXTFunc   func(ctx context.Context, host string) ([]string, error)
 	LookupMXFunc    func(ctx context.Context, host string) ([]*net.MX, error)
@@ -99,6 +101,7 @@ func (c *Checker) Run(ctx context.Context) *Report {
 	c.checkInstallMethod(report)
 	c.checkLatestVersion(ctx, report)
 	c.checkSystemTime(report)
+	c.checkConfigFile(report)
 	c.checkDNS(ctx, report)
 	c.checkHTTPS(ctx, report)
 	c.checkWHOIS(ctx, report)
@@ -269,6 +272,58 @@ func (c *Checker) checkSystemTime(report *Report) {
 		Status: status,
 		Value:  value,
 		Detail: detail,
+	})
+}
+
+func (c *Checker) checkConfigFile(report *Report) {
+	path := c.ConfigPath
+	if path == "" {
+		path = config.DefaultPath()
+	}
+	if path == "" {
+		report.Items = append(report.Items, Item{
+			Name:   "Config file",
+			Status: StatusUnknown,
+			Value:  "unknown",
+			Detail: "could not determine config path",
+		})
+		return
+	}
+
+	_, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			report.Items = append(report.Items, Item{
+				Name:   "Config file",
+				Status: StatusOK,
+				Value:  "not configured",
+				Detail: path,
+			})
+			return
+		}
+		report.Items = append(report.Items, Item{
+			Name:   "Config file",
+			Status: StatusFail,
+			Value:  "unreadable",
+			Detail: err.Error(),
+		})
+		return
+	}
+
+	if _, err := config.Load(path); err != nil {
+		report.Items = append(report.Items, Item{
+			Name:   "Config file",
+			Status: StatusFail,
+			Value:  "invalid",
+			Detail: err.Error(),
+		})
+		return
+	}
+
+	report.Items = append(report.Items, Item{
+		Name:   "Config file",
+		Status: StatusOK,
+		Value:  path,
 	})
 }
 

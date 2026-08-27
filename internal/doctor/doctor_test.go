@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -426,6 +428,65 @@ func TestRenderUpdateAvailable(t *testing.T) {
 	}
 	if !strings.Contains(out, "WARNING") {
 		t.Errorf("output missing WARNING status")
+	}
+}
+
+func TestCheckConfigFileMissing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "does-not-exist.json")
+	c := &Checker{ConfigPath: path}
+
+	report := &Report{}
+	c.checkConfigFile(report)
+
+	if len(report.Items) != 1 {
+		t.Fatalf("expected 1 item, got %+v", report.Items)
+	}
+	if report.Items[0].Status != StatusOK {
+		t.Errorf("expected OK for missing config, got %s", report.Items[0].Status)
+	}
+	if !strings.Contains(report.Items[0].Value, "not configured") {
+		t.Errorf("expected 'not configured' in value, got %q", report.Items[0].Value)
+	}
+}
+
+func TestCheckConfigFileValid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"format":"json"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+
+	c := &Checker{ConfigPath: path}
+	report := &Report{}
+	c.checkConfigFile(report)
+
+	if len(report.Items) != 1 {
+		t.Fatalf("expected 1 item, got %+v", report.Items)
+	}
+	if report.Items[0].Status != StatusOK {
+		t.Errorf("expected OK for valid config, got %s", report.Items[0].Status)
+	}
+	if report.Items[0].Value != path {
+		t.Errorf("value = %q, want %q", report.Items[0].Value, path)
+	}
+}
+
+func TestCheckConfigFileInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+
+	c := &Checker{ConfigPath: path}
+	report := &Report{}
+	c.checkConfigFile(report)
+
+	if len(report.Items) != 1 {
+		t.Fatalf("expected 1 item, got %+v", report.Items)
+	}
+	if report.Items[0].Status != StatusFail {
+		t.Errorf("expected FAIL for invalid config, got %s", report.Items[0].Status)
 	}
 }
 

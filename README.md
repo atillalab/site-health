@@ -2,7 +2,7 @@
 
 A fast CLI for checking website and domain health.
 
-> **Status:** Go rewrite complete (v0.10.0)
+> **Status:** Go rewrite complete (v0.11.0)
 
 ## Quick Start
 
@@ -15,6 +15,7 @@ site-health --mail-checks spf example.com
 site-health --skip-redirect example.com
 site-health --format json example.com
 site-health --doctor
+site-health --init-config
 ```
 
 ## Features
@@ -42,6 +43,7 @@ Zero external dependencies — stdlib only:
 - Optional `/llms.txt` availability check (skippable with `--skip-llms-txt`)
 - Canonical redirect check skippable with `--skip-redirect`
 - Machine-readable JSON output for automation and monitoring
+- Config file and environment variables for default flags
 - Self-diagnostic `--doctor` mode for the binary and local environment
 
 ## Usage
@@ -190,7 +192,7 @@ Example:
 ```json
 {
   "tool": "site-health",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "domain": "example.com",
   "mode": "site",
   "expected_url": "https://example.com/",
@@ -225,7 +227,7 @@ Example:
 
 In mail-only mode, the `checks` object contains just the `mail` block and the top-level `mode` is `"mail"`. When mail checks are skipped with `--skip-mail`, the `mail` block is omitted. When individual mail checks are skipped with `--mail-checks` or `--skip-mail-checks`, only the enabled mail subchecks appear under `checks.mail`.
 
-Run self-diagnostics for the binary and local environment. `--doctor` does not require a domain and checks the install path, detected installation method, current and latest versions, system time, DNS resolution, outbound HTTPS, WHOIS connectivity, and mail DNS capabilities:
+Run self-diagnostics for the binary and local environment. `--doctor` does not require a domain and checks the install path, detected installation method, current and latest versions, system time, config file, DNS resolution, outbound HTTPS, WHOIS connectivity, and mail DNS capabilities:
 
 ```bash
 site-health --doctor
@@ -238,12 +240,14 @@ site-health doctor
 ──────────────────
 Binary path:      /opt/homebrew/bin/site-health
 Install method:   Homebrew
-Current version:  0.10.0
-Latest version:   0.10.0    (up to date)
+Current version:  0.11.0
+Latest version:   0.11.0    (up to date)
 
 Environment
 ───────────
 System time:        OK  2026-08-27T12:34:56Z
+Config file:        OK  not configured
+                    /Users/alice/.config/site-health/config.json
 DNS resolution:     OK  example.com → 93.184.216.34
 Outbound HTTPS:     OK  https://detectportal.firefox.com/success.txt → 200 (success)
 WHOIS lookup:       OK  whois.iana.org:43 reachable
@@ -254,6 +258,73 @@ Status: HEALTHY
 ```
 
 The latest-version check uses the GitHub Releases API. If the network is unavailable or the API rate-limit is exceeded, the check reports the error gracefully without failing the whole command.
+
+## Configuration
+
+Set default behavior in a config file so you do not have to repeat flags for every run. The default config path follows the XDG Base Directory Specification:
+
+```bash
+$XDG_CONFIG_HOME/site-health/config.json
+```
+
+If `XDG_CONFIG_HOME` is unset, it falls back to:
+
+```bash
+~/.config/site-health/config.json
+```
+
+Use `--config <path>` to load a different file. A missing config file is silently ignored; a malformed file exits with an error.
+
+Generate a starter config file with all supported settings:
+
+```bash
+site-health --init-config
+```
+
+This writes the sample file to the default config path. Use `--config <path>` to write it elsewhere. It will not overwrite an existing file.
+
+Example config:
+
+```json
+{
+  "verbose": false,
+  "skip_redirect": true,
+  "skip_mail": false,
+  "skip_llms_txt": false,
+  "format": "json",
+  "mail_checks": ["mx", "spf"],
+  "skip_mail_checks": []
+}
+```
+
+Supported settings:
+
+| Setting            | Type       | Matching flag          |
+|--------------------|------------|------------------------|
+| `verbose`          | boolean    | `--verbose`            |
+| `skip_redirect`    | boolean    | `--skip-redirect`      |
+| `skip_mail`        | boolean    | `--skip-mail`          |
+| `skip_llms_txt`    | boolean    | `--skip-llms-txt`      |
+| `format`           | string     | `--format`             |
+| `mail_checks`      | string[]   | `--mail-checks`        |
+| `skip_mail_checks` | string[]   | `--skip-mail-checks`   |
+
+The same options can be set via environment variables:
+
+```bash
+export SITE_HEALTH_FORMAT=json
+export SITE_HEALTH_SKIP_REDIRECT=true
+export SITE_HEALTH_MAIL_CHECKS=mx,spf
+```
+
+Precedence, from highest to lowest:
+
+1. Explicit CLI flags
+2. Environment variables (`SITE_HEALTH_*`)
+3. Config file values
+4. Built-in defaults
+
+When `--verbose` is enabled and a config file is loaded, the path is printed to stderr so it is clear where defaults are coming from.
 
 ## Installation
 
