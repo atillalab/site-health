@@ -2,7 +2,7 @@
 
 A fast CLI for checking website and domain health.
 
-> **Status:** Go rewrite complete (v0.11.0)
+> **Status:** Go rewrite complete (v0.12.0)
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ Zero external dependencies — stdlib only:
 - DNS resolution (A, AAAA, CNAME)
 - TCP connectivity (80/443)
 - HTTP/HTTPS availability
-- Redirect and canonical URL validation
+- Redirect and canonical host validation
 - SSL certificate validation
 - Response time measurement
 - HTML content validation
@@ -59,7 +59,7 @@ Example:
 ```text
 Site Health Check
 Domain: example.com
-Expected URL: https://example.com/
+Expected Host: example.com
 
 SITE HEALTH
 ───────────
@@ -79,7 +79,7 @@ When a forwarded or explicit canonical URL matters, the dashboard includes it:
 ```text
 Site Health Check
 Domain: example.com
-Expected URL: https://example.org/
+Expected Host: example.org
 
 SITE HEALTH
 ───────────
@@ -175,10 +175,10 @@ Forwarded domains are detected automatically when the final URL is unambiguous:
 site-health example.com
 ```
 
-To strictly require a specific final URL, provide it explicitly:
+To strictly require a specific final host, provide it explicitly:
 
 ```bash
-site-health --expected-url https://example.org/ example.com
+site-health --expected-host example.org example.com
 ```
 
 Output a machine-readable JSON document instead of the dashboard (useful for scripts, CI, and monitoring). `--verbose` output is suppressed in JSON mode; the same exit codes apply (`0` healthy, `1` issues found):
@@ -192,10 +192,10 @@ Example:
 ```json
 {
   "tool": "site-health",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "domain": "example.com",
   "mode": "site",
-  "expected_url": "https://example.com/",
+  "expected_host": "example.com",
   "forwarding": {
     "auto_detected": false,
     "ambiguous": false,
@@ -240,8 +240,8 @@ site-health doctor
 ──────────────────
 Binary path:      /opt/homebrew/bin/site-health
 Install method:   Homebrew
-Current version:  0.11.0
-Latest version:   0.11.0    (up to date)
+Current version:  0.12.0
+Latest version:   0.12.0    (up to date)
 
 Environment
 ───────────

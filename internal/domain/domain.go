@@ -49,6 +49,17 @@ func ExtractHost(rawURL string) string {
 	return strings.ToLower(u.Hostname())
 }
 
+// ParseHost accepts either a bare host or an absolute URL and returns the
+// normalized host. It is used for flags values that accept both forms, such
+// as --expected-host.
+func ParseHost(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if strings.Contains(s, "://") {
+		return ExtractHost(s)
+	}
+	return s
+}
+
 func IsSameSiteHost(host, domain string) bool {
 	d := strings.ToLower(domain)
 	apex := strings.TrimPrefix(d, "www.")

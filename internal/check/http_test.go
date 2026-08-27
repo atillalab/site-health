@@ -10,8 +10,8 @@ import (
 
 func TestCheckHTTP_AllOK(t *testing.T) {
 	r := &Runner{
-		Domain:      "example.com",
-		ExpectedURL: "https://example.com/",
+		Domain:       "example.com",
+		ExpectedHost: "example.com",
 	}
 
 	probe := fixedProbe(map[string]probeResult{
@@ -40,8 +40,8 @@ func TestCheckHTTP_AllOK(t *testing.T) {
 func TestCheckHTTP_HTTPSRedirectToDifferentHost(t *testing.T) {
 	// crawler.sh scenario: www redirects to www, but still over HTTPS.
 	r := &Runner{
-		Domain:      "example.com",
-		ExpectedURL: "https://example.com/",
+		Domain:       "example.com",
+		ExpectedHost: "example.com",
 	}
 
 	probe := fixedProbe(map[string]probeResult{
@@ -66,8 +66,8 @@ func TestCheckHTTP_HTTPSRedirectToDifferentHost(t *testing.T) {
 
 func TestCheckHTTP_HTTPSDowngrade(t *testing.T) {
 	r := &Runner{
-		Domain:      "example.com",
-		ExpectedURL: "https://example.com/",
+		Domain:       "example.com",
+		ExpectedHost: "example.com",
 	}
 
 	probe := fixedProbe(map[string]probeResult{
@@ -92,8 +92,8 @@ func TestCheckHTTP_HTTPSDowngrade(t *testing.T) {
 
 func TestCheckHTTP_HTTPSConnectionError(t *testing.T) {
 	r := &Runner{
-		Domain:      "example.com",
-		ExpectedURL: "https://example.com/",
+		Domain:       "example.com",
+		ExpectedHost: "example.com",
 	}
 
 	probe := fixedProbe(map[string]probeResult{
@@ -115,8 +115,8 @@ func TestCheckHTTP_HTTPSConnectionError(t *testing.T) {
 
 func TestCheckHTTP_HTTPToHTTPSExpectedHost(t *testing.T) {
 	r := &Runner{
-		Domain:      "example.com",
-		ExpectedURL: "https://example.com/",
+		Domain:       "example.com",
+		ExpectedHost: "example.com",
 	}
 
 	probe := fixedProbe(map[string]probeResult{
@@ -139,8 +139,8 @@ func TestCheckHTTP_HTTPToHTTPSExpectedHost(t *testing.T) {
 func TestCheckHTTP_Non200OnHTTPS(t *testing.T) {
 	// HTTPS itself is fine (TLS handshake succeeded); the page just returned an error.
 	r := &Runner{
-		Domain:      "example.com",
-		ExpectedURL: "https://example.com/",
+		Domain:       "example.com",
+		ExpectedHost: "example.com",
 	}
 
 	probe := fixedProbe(map[string]probeResult{
@@ -162,8 +162,8 @@ func TestCheckHTTP_Non200OnHTTPS(t *testing.T) {
 
 func TestCheckHTTP_SlowResponseWarning(t *testing.T) {
 	r := &Runner{
-		Domain:      "example.com",
-		ExpectedURL: "https://example.com/",
+		Domain:       "example.com",
+		ExpectedHost: "example.com",
 	}
 
 	probe := fixedProbe(map[string]probeResult{
@@ -188,8 +188,8 @@ func TestCheckHTTP_SlowResponseWarning(t *testing.T) {
 
 func TestCheckHTTP_VerySlowResponseFail(t *testing.T) {
 	r := &Runner{
-		Domain:      "example.com",
-		ExpectedURL: "https://example.com/",
+		Domain:       "example.com",
+		ExpectedHost: "example.com",
 	}
 
 	probe := fixedProbe(map[string]probeResult{
@@ -214,8 +214,8 @@ func TestCheckHTTP_VerySlowResponseFail(t *testing.T) {
 
 func TestCheckHTTP_Subdomain(t *testing.T) {
 	r := &Runner{
-		Domain:      "sub.example.com",
-		ExpectedURL: "https://sub.example.com/",
+		Domain:       "sub.example.com",
+		ExpectedHost: "sub.example.com",
 	}
 
 	probed := []string{}
@@ -243,7 +243,7 @@ func TestCheckHTTP_Subdomain(t *testing.T) {
 func TestCheckHTTP_SkipRedirect(t *testing.T) {
 	r := &Runner{
 		Domain:       "example.com",
-		ExpectedURL:  "https://example.com/",
+		ExpectedHost: "example.com",
 		SkipRedirect: true,
 	}
 
@@ -273,7 +273,7 @@ func TestCheckHTTP_SkipRedirect(t *testing.T) {
 func TestCheckHTTP_SkipRedirectIgnoresHTTPError(t *testing.T) {
 	r := &Runner{
 		Domain:       "example.com",
-		ExpectedURL:  "https://example.com/",
+		ExpectedHost: "example.com",
 		SkipRedirect: true,
 	}
 
@@ -300,7 +300,7 @@ func TestCheckHTTP_SkipRedirectIgnoresHTTPError(t *testing.T) {
 func TestCheckHTTP_SkipRedirectStillFailsOnHTTPSDowngrade(t *testing.T) {
 	r := &Runner{
 		Domain:       "example.com",
-		ExpectedURL:  "https://example.com/",
+		ExpectedHost: "example.com",
 		SkipRedirect: true,
 	}
 
@@ -327,7 +327,7 @@ func TestCheckHTTP_SkipRedirectStillFailsOnHTTPSDowngrade(t *testing.T) {
 func TestCheckHTTP_SkipRedirectStillFailsOnHTTPSError(t *testing.T) {
 	r := &Runner{
 		Domain:       "example.com",
-		ExpectedURL:  "https://example.com/",
+		ExpectedHost: "example.com",
 		SkipRedirect: true,
 	}
 

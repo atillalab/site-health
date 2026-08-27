@@ -105,18 +105,18 @@ func (r *Runner) checkHTTPWithProbe(probe func(string) probeResult) (redirectSta
 		if isHTTPS && strings.HasPrefix(result.FinalURL, "http://") {
 			redirectStatus = FAIL
 			httpsStatus = FAIL
-			r.Fail(fmt.Sprintf("%s — downgraded to %s (expected %s)", u, result.FinalURL, r.ExpectedURL))
+			r.Fail(fmt.Sprintf("%s — downgraded to %s (expected %s)", u, result.FinalURL, r.ExpectedHost))
 		}
 
 		if !r.SkipRedirect {
 			if result.StatusCode != 200 {
 				redirectStatus = FAIL
-				r.Fail(fmt.Sprintf("%s — expected status 200, got %d (expected %s)", u, result.StatusCode, r.ExpectedURL))
-			} else if domain.ExtractHost(result.FinalURL) != domain.ExtractHost(r.ExpectedURL) {
+				r.Fail(fmt.Sprintf("%s — expected status 200, got %d (expected %s)", u, result.StatusCode, r.ExpectedHost))
+			} else if domain.ExtractHost(result.FinalURL) != r.ExpectedHost {
 				redirectStatus = FAIL
-				r.Fail(fmt.Sprintf("%s — redirected to %s (expected %s)", u, result.FinalURL, r.ExpectedURL))
-			} else if domain.ExtractHost(r.ExpectedURL) != r.Domain {
-				r.Verbosef("\033[32mPASS\033[0m  %s — forwarded to expected URL\n", u)
+				r.Fail(fmt.Sprintf("%s — redirected to %s (expected %s)", u, result.FinalURL, r.ExpectedHost))
+			} else if r.ExpectedHost != r.Domain {
+				r.Verbosef("\033[32mPASS\033[0m  %s — forwarded to expected host\n", u)
 			} else {
 				r.Verbosef("\033[32mPASS\033[0m  %s\n", u)
 			}
@@ -214,20 +214,22 @@ func (r *Runner) CheckContent() {
 		},
 	}
 
+	expectedURL := "https://" + r.ExpectedHost + "/"
+
 	start := time.Now()
-	resp, err := client.Get(r.ExpectedURL)
+	resp, err := client.Get(expectedURL)
 	elapsed := time.Since(start)
 
 	if err != nil {
 		errMsg := describeError(err)
-		r.Fail(fmt.Sprintf("%s — could not download content: %s", r.ExpectedURL, errMsg))
+		r.Fail(fmt.Sprintf("%s — could not download content: %s", expectedURL, errMsg))
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		r.Fail(fmt.Sprintf("%s — error reading response body", r.ExpectedURL))
+		r.Fail(fmt.Sprintf("%s — error reading response body", expectedURL))
 		return
 	}
 
@@ -240,8 +242,8 @@ func (r *Runner) CheckContent() {
 		r.Fail(fmt.Sprintf("canonical page — expected 200, got %d", resp.StatusCode))
 	}
 
-	if resp.Request.URL.String() == r.ExpectedURL || domain.ExtractHost(resp.Request.URL.String()) == domain.ExtractHost(r.ExpectedURL) {
-		r.Verbosef("\033[32mPASS\033[0m  canonical page at expected URL\n")
+	if resp.Request.URL.String() == expectedURL || domain.ExtractHost(resp.Request.URL.String()) == r.ExpectedHost {
+		r.Verbosef("\033[32mPASS\033[0m  canonical page at expected host\n")
 	} else {
 		r.Fail(fmt.Sprintf("canonical page redirected to unexpected URL: %s", resp.Request.URL.String()))
 	}

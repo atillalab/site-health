@@ -83,7 +83,7 @@ func main() {
 	mailOnly := flag.Bool("mail", false, "Run only mail-related DNS checks")
 	flag.Var(&verbose, "verbose", "Show detailed troubleshooting diagnostics")
 	flag.Var(&format, "format", "Output format: dashboard or json")
-	expectedURL := flag.String("expected-url", "", "Expected final URL after redirects")
+	expectedHost := flag.String("expected-host", "", "Expected final host after redirects (host or URL)")
 	flag.Var(&skipMail, "skip-mail", "Skip mail-related DNS checks in site mode")
 	flag.Var(&mailChecks, "mail-checks", "Comma-separated mail checks to run: mx, spf, dmarc")
 	flag.Var(&skipMailChecks, "skip-mail-checks", "Comma-separated mail checks to skip: mx, spf, dmarc")
@@ -94,7 +94,7 @@ func main() {
 	doctorMode := flag.Bool("doctor", false, "Run self-diagnostics for the binary and environment")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--skip-redirect] [--format <dashboard|json>] [--config <path>] [--init-config] [--doctor] [--version] [<domain>]\n")
+		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-host <host>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--skip-redirect] [--format <dashboard|json>] [--config <path>] [--init-config] [--doctor] [--version] [<domain>]\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail-checks spf example.com\n")
@@ -103,7 +103,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-mail example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-llms-txt example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-redirect example.com\n")
-		fmt.Fprintf(os.Stderr, "Example: site-health --expected-url https://example.org/ example.com\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health --expected-host example.org example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --format json example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --init-config\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --doctor\n")
@@ -212,15 +212,15 @@ func main() {
 		SkipRedirect: resolvedSkipRedirect,
 	}
 
-	if *expectedURL != "" {
-		normalized, err := domain.NormalizeURL(*expectedURL)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: --expected-url must be a valid absolute http:// or https:// URL.\n")
+	if *expectedHost != "" {
+		host := domain.ParseHost(*expectedHost)
+		if host == "" {
+			fmt.Fprintf(os.Stderr, "Error: --expected-host must be a valid host or absolute http:// or https:// URL.\n")
 			os.Exit(2)
 		}
-		runner.ExpectedURL = normalized
+		runner.ExpectedHost = host
 	} else {
-		runner.ExpectedURL = "https://" + domainName + "/"
+		runner.ExpectedHost = domainName
 	}
 
 	ctx := context.Background()
@@ -347,7 +347,7 @@ func splitMailCheckString(value string) []string {
 }
 
 func detectForwarding(ctx context.Context, runner *check.Runner) {
-	if runner.ExpectedURL != "https://"+runner.Domain+"/" {
+	if runner.ExpectedHost != runner.Domain {
 		return
 	}
 
@@ -369,7 +369,7 @@ func detectForwarding(ctx context.Context, runner *check.Runner) {
 	}
 
 	type candidate struct {
-		url string
+		host string
 	}
 
 	var mu sync.Mutex
@@ -381,9 +381,10 @@ func detectForwarding(ctx context.Context, runner *check.Runner) {
 		go func(targetURL string) {
 			defer wg.Done()
 			result := runner.ProbeURLForForwarding(targetURL)
-			if result.StatusCode == 200 && result.FinalURL != runner.ExpectedURL && !domain.IsSameSiteHost(domain.ExtractHost(result.FinalURL), runner.Domain) {
+			finalHost := domain.ExtractHost(result.FinalURL)
+			if result.StatusCode == 200 && finalHost != runner.ExpectedHost && !domain.IsSameSiteHost(finalHost, runner.Domain) {
 				mu.Lock()
-				candidates = append(candidates, candidate{url: result.FinalURL})
+				candidates = append(candidates, candidate{host: finalHost})
 				mu.Unlock()
 			}
 		}(u)
@@ -393,20 +394,20 @@ func detectForwarding(ctx context.Context, runner *check.Runner) {
 	seen := make(map[string]bool)
 	var unique []string
 	for _, c := range candidates {
-		if !seen[c.url] {
-			seen[c.url] = true
-			unique = append(unique, c.url)
+		if !seen[c.host] {
+			seen[c.host] = true
+			unique = append(unique, c.host)
 		}
 	}
 
 	if len(unique) == 1 {
-		runner.ExpectedURL = unique[0]
+		runner.ExpectedHost = unique[0]
 		runner.ForwardingAutoDetected = true
 		runner.Verbosef("Domain forwards to %s\n", unique[0])
-		runner.Verbosef("Using forwarded URL as expected URL for this run\n")
+		runner.Verbosef("Using forwarded host as expected host for this run\n")
 	} else if len(unique) > 1 {
 		runner.ForwardingAmbiguous = true
-		runner.ForwardingHintURL = unique[0]
+		runner.ForwardingHintHost = unique[0]
 		runner.ForwardingCandidates = unique
 	}
 }

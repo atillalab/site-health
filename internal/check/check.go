@@ -55,21 +55,21 @@ type Issue struct {
 }
 
 type Report struct {
-	Tool        string     `json:"tool"`
-	Version     string     `json:"version"`
-	Domain      string     `json:"domain"`
-	Mode        string     `json:"mode"`
-	ExpectedURL string     `json:"expected_url,omitempty"`
-	Forwarding  Forwarding `json:"forwarding,omitempty"`
-	Checks      Checks     `json:"checks"`
-	Issues      []Issue    `json:"issues"`
-	Summary     Summary    `json:"summary"`
+	Tool         string     `json:"tool"`
+	Version      string     `json:"version"`
+	Domain       string     `json:"domain"`
+	Mode         string     `json:"mode"`
+	ExpectedHost string     `json:"expected_host,omitempty"`
+	Forwarding   Forwarding `json:"forwarding,omitempty"`
+	Checks       Checks     `json:"checks"`
+	Issues       []Issue    `json:"issues"`
+	Summary      Summary    `json:"summary"`
 }
 
 type Forwarding struct {
 	AutoDetected bool     `json:"auto_detected"`
 	Ambiguous    bool     `json:"ambiguous"`
-	HintURL      string   `json:"hint_url,omitempty"`
+	HintHost     string   `json:"hint_host,omitempty"`
 	Candidates   []string `json:"candidates"`
 }
 
@@ -167,7 +167,7 @@ func (m MailChecks) EnabledCount() int {
 
 type Runner struct {
 	Domain       string
-	ExpectedURL  string
+	ExpectedHost string
 	MailOnly     bool
 	Verbose      bool
 	SkipMail     bool
@@ -177,7 +177,7 @@ type Runner struct {
 
 	ForwardingAutoDetected bool
 	ForwardingAmbiguous    bool
-	ForwardingHintURL      string
+	ForwardingHintHost     string
 	ForwardingCandidates   []string
 
 	mu        sync.Mutex
@@ -239,15 +239,15 @@ func (r *Runner) enabledMailChecks() MailChecks {
 
 func (r *Runner) buildReport(mode string) *Report {
 	return &Report{
-		Tool:        "site-health",
-		Version:     version.Version,
-		Domain:      r.Domain,
-		Mode:        mode,
-		ExpectedURL: r.ExpectedURL,
+		Tool:         "site-health",
+		Version:      version.Version,
+		Domain:       r.Domain,
+		Mode:         mode,
+		ExpectedHost: r.ExpectedHost,
 		Forwarding: Forwarding{
 			AutoDetected: r.ForwardingAutoDetected,
 			Ambiguous:    r.ForwardingAmbiguous,
-			HintURL:      r.ForwardingHintURL,
+			HintHost:     r.ForwardingHintHost,
 			Candidates:   r.ForwardingCandidates,
 		},
 		Issues: r.issues,

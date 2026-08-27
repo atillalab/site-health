@@ -84,6 +84,31 @@ func TestExtractHost(t *testing.T) {
 	}
 }
 
+func TestParseHost(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"example.com", "example.com"},
+		{"Example.Com", "example.com"},
+		{"https://example.com", "example.com"},
+		{"https://example.com/", "example.com"},
+		{"https://example.com/path", "example.com"},
+		{"http://www.example.com:8080/path", "www.example.com"},
+		{"  HTTPS://EXAMPLE.COM/  ", "example.com"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := ParseHost(tt.input)
+			if result != tt.expected {
+				t.Errorf("ParseHost(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestIsSameSiteHost(t *testing.T) {
 	tests := []struct {
 		host     string

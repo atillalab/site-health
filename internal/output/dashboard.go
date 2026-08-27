@@ -11,8 +11,8 @@ func RenderDashboard(w io.Writer, report *check.Report) {
 	fmt.Fprintf(w, "%sSite Health Check%s\n", Bold, Reset)
 	fmt.Fprintf(w, "Domain: %s\n", report.Domain)
 
-	if report.ExpectedURL != "" {
-		fmt.Fprintf(w, "Expected URL: %s\n", report.ExpectedURL)
+	if report.ExpectedHost != "" {
+		fmt.Fprintf(w, "Expected Host: %s\n", report.ExpectedHost)
 	}
 
 	fmt.Fprintln(w)
