@@ -269,6 +269,12 @@ The resulting binary has zero external dependencies.
 go test ./...
 ```
 
+Run tests with readable, per-test output:
+
+```bash
+go test ./... -v
+```
+
 ### Build
 
 ```bash
