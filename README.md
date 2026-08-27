@@ -61,6 +61,7 @@ SITE HEALTH
   DNS          OK
   HTTPS        OK
   SSL          81 days
+  Domain Reg   757 days (14 Sep 2028)
   Redirect     OK
   Response     184 ms
   Mail         OK
@@ -80,6 +81,7 @@ SITE HEALTH
   DNS          OK
   HTTPS        OK
   SSL          81 days
+  Domain Reg   757 days (14 Sep 2028)
   Redirect     OK
   Response     184 ms
   Mail         OK

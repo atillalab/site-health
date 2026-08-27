@@ -1,6 +1,9 @@
 package check
 
 import (
+	"bytes"
+	"io"
+	"os"
 	"testing"
 	"time"
 )
@@ -110,5 +113,62 @@ func TestParseExpiryDateValues(t *testing.T) {
 
 	if !result.Equal(expected) {
 		t.Errorf("parseExpiryDate(%q) = %v, want %v", input, result, expected)
+	}
+}
+
+func TestDomainRegistrationStatus(t *testing.T) {
+	tests := []struct {
+		name          string
+		daysRemaining int
+		expected      Status
+	}{
+		{name: "expired", daysRemaining: -1, expected: FAIL},
+		{name: "fail boundary", daysRemaining: 14, expected: FAIL},
+		{name: "warn lower boundary", daysRemaining: 15, expected: WARN},
+		{name: "warn boundary", daysRemaining: 60, expected: WARN},
+		{name: "ok", daysRemaining: 61, expected: OK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := domainRegistrationStatus(tt.daysRemaining)
+			if result != tt.expected {
+				t.Errorf("domainRegistrationStatus(%d) = %s, want %s", tt.daysRemaining, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestLogDomainRegistrationDetailsIncludesExpiryDate(t *testing.T) {
+	oldStderr := os.Stderr
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() unexpected error: %v", err)
+	}
+	defer func() {
+		os.Stderr = oldStderr
+		readPipe.Close()
+	}()
+
+	os.Stderr = writePipe
+
+	runner := &Runner{Verbose: true}
+	runner.logDomainRegistrationDetails(&DomainRegistrationResult{
+		Registrar: "Example Registrar",
+		ExpiresAt: "2028-09-14T04:00:00Z",
+	})
+
+	writePipe.Close()
+
+	output, err := io.ReadAll(readPipe)
+	if err != nil {
+		t.Fatalf("io.ReadAll() unexpected error: %v", err)
+	}
+
+	if !bytes.Contains(output, []byte("registrar: Example Registrar")) {
+		t.Error("verbose output missing registrar")
+	}
+	if !bytes.Contains(output, []byte("expiry date: 2028-09-14T04:00:00Z")) {
+		t.Error("verbose output missing expiry date")
 	}
 }

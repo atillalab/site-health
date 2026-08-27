@@ -176,6 +176,20 @@ func parseExpiryDate(dateStr string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("unable to parse date: %s", dateStr)
 }
 
+func ParseExpiryDate(dateStr string) (time.Time, error) {
+	return parseExpiryDate(dateStr)
+}
+
+func domainRegistrationStatus(daysRemaining int) Status {
+	if daysRemaining <= 14 {
+		return FAIL
+	}
+	if daysRemaining <= 60 {
+		return WARN
+	}
+	return OK
+}
+
 func (r *Runner) CheckDomainRegistration() *DomainRegistrationResult {
 	result := &DomainRegistrationResult{Status: OK}
 
@@ -220,21 +234,23 @@ func (r *Runner) CheckDomainRegistration() *DomainRegistrationResult {
 				daysRemaining := int(time.Until(t).Hours() / 24)
 				result.DaysRemaining = &daysRemaining
 
-				if daysRemaining < 0 {
+				switch domainRegistrationStatus(daysRemaining) {
+				case FAIL:
 					result.Status = FAIL
-					r.Fail(fmt.Sprintf("domain registration expired %d days ago", -daysRemaining))
-				} else if daysRemaining < 7 {
-					result.Status = FAIL
-					r.Fail(fmt.Sprintf("domain registration expires in %d days", daysRemaining))
-				} else if daysRemaining <= 30 {
+					if daysRemaining < 0 {
+						r.Fail(fmt.Sprintf("domain registration expired %d days ago", -daysRemaining))
+					} else {
+						r.Fail(fmt.Sprintf("domain registration expires in %d days", daysRemaining))
+					}
+				case WARN:
 					result.Status = WARN
 					r.Warn(fmt.Sprintf("domain registration expires in %d days", daysRemaining))
-				} else {
+				default:
 					r.Verbosef("\033[32mPASS\033[0m  domain registration expires in %d days\n", daysRemaining)
 				}
 			} else {
-				result.Status = FAIL
-				r.Fail(fmt.Sprintf("domain registration expiry date could not be parsed: %s", dateStr))
+				result.Status = WARN
+				r.Warn(fmt.Sprintf("domain registration expiry date could not be parsed: %s", dateStr))
 			}
 		}
 
@@ -243,18 +259,22 @@ func (r *Runner) CheckDomainRegistration() *DomainRegistrationResult {
 		}
 	}
 
+	r.logDomainRegistrationDetails(result)
+
+	if result.ExpiresAt == "" {
+		result.Status = WARN
+		r.Warn("domain registration expiry date could not be read")
+	}
+
+	return result
+}
+
+func (r *Runner) logDomainRegistrationDetails(result *DomainRegistrationResult) {
 	if result.Registrar != "" {
 		r.Verbosef("      → registrar: %s\n", result.Registrar)
 	}
 
 	if result.ExpiresAt != "" {
-		r.Verbosef("      → expires: %s\n", result.ExpiresAt)
+		r.Verbosef("      → expiry date: %s\n", result.ExpiresAt)
 	}
-
-	if result.ExpiresAt == "" {
-		result.Status = FAIL
-		r.Fail("domain registration expiry date could not be read")
-	}
-
-	return result
 }

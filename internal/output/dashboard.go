@@ -36,6 +36,10 @@ func RenderDashboard(w io.Writer, report *check.Report) {
 		}
 	}
 
+	if report.Checks.DomainRegistration != nil {
+		renderValueRow(w, "Domain Reg", domainRegistrationValue(report.Checks.DomainRegistration), report.Checks.DomainRegistration.Status.String())
+	}
+
 	if report.Checks.Redirect != nil {
 		renderSimpleRow(w, "Redirect", report.Checks.Redirect.Status.String())
 	}
@@ -92,6 +96,32 @@ func renderValueRow(w io.Writer, label, value, status string) {
 	default:
 		fmt.Fprintf(w, "  %-12s %s\n", label, value)
 	}
+}
+
+func domainRegistrationValue(result *check.DomainRegistrationResult) string {
+	expiryDate := domainRegistrationExpiryDate(result.ExpiresAt)
+	if result.DaysRemaining != nil && expiryDate != "" {
+		return fmt.Sprintf("%d days (%s)", *result.DaysRemaining, expiryDate)
+	}
+	if result.DaysRemaining != nil {
+		return fmt.Sprintf("%d days", *result.DaysRemaining)
+	}
+	if expiryDate != "" {
+		return expiryDate
+	}
+	return "Unknown"
+}
+
+func domainRegistrationExpiryDate(expiresAt string) string {
+	if expiresAt == "" {
+		return ""
+	}
+
+	t, err := check.ParseExpiryDate(expiresAt)
+	if err != nil {
+		return ""
+	}
+	return t.Format("02 Jan 2006")
 }
 
 func renderIssues(w io.Writer, issues []check.Issue) {

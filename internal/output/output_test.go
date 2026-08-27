@@ -9,11 +9,19 @@ import (
 )
 
 func TestRenderJSON(t *testing.T) {
+	domainRegDays := 757
 	report := &check.Report{
 		Tool:    "site-health",
 		Version: "0.8",
 		Domain:  "example.com",
 		Mode:    "mail",
+		Checks: check.Checks{
+			DomainRegistration: &check.DomainRegistrationResult{
+				Status:        check.OK,
+				ExpiresAt:     "2028-09-14T04:00:00Z",
+				DaysRemaining: &domainRegDays,
+			},
+		},
 		Summary: check.Summary{
 			Status:   "HEALTHY",
 			Failures: 0,
@@ -38,14 +46,39 @@ func TestRenderJSON(t *testing.T) {
 	if result["domain"] != "example.com" {
 		t.Errorf("domain = %v, want 'example.com'", result["domain"])
 	}
+
+	checks, ok := result["checks"].(map[string]any)
+	if !ok {
+		t.Fatalf("checks missing or invalid: %v", result["checks"])
+	}
+
+	domainRegistration, ok := checks["domain_registration"].(map[string]any)
+	if !ok {
+		t.Fatalf("domain_registration missing or invalid: %v", checks["domain_registration"])
+	}
+
+	if domainRegistration["expires_at"] != "2028-09-14T04:00:00Z" {
+		t.Errorf("expires_at = %v, want '2028-09-14T04:00:00Z'", domainRegistration["expires_at"])
+	}
+	if domainRegistration["days_remaining"] != float64(757) {
+		t.Errorf("days_remaining = %v, want 757", domainRegistration["days_remaining"])
+	}
 }
 
 func TestRenderDashboard(t *testing.T) {
+	domainRegDays := 224
 	report := &check.Report{
 		Tool:    "site-health",
 		Version: "0.8",
 		Domain:  "example.com",
 		Mode:    "site",
+		Checks: check.Checks{
+			DomainRegistration: &check.DomainRegistrationResult{
+				Status:        check.OK,
+				ExpiresAt:     "2027-05-07T00:00:00Z",
+				DaysRemaining: &domainRegDays,
+			},
+		},
 		Summary: check.Summary{
 			Status:   "HEALTHY",
 			Failures: 0,
@@ -62,6 +95,84 @@ func TestRenderDashboard(t *testing.T) {
 	if !bytes.Contains(buf.Bytes(), []byte("example.com")) {
 		t.Error("output missing domain")
 	}
+	if !bytes.Contains(buf.Bytes(), []byte("Domain Reg   224 days (07 May 2027)")) {
+		t.Error("output missing domain registration expiry date and days")
+	}
+}
+
+func TestRenderDashboardDomainRegistrationExpiryExamples(t *testing.T) {
+	tests := []struct {
+		name     string
+		result   check.DomainRegistrationResult
+		expected string
+		status   string
+	}{
+		{
+			name: "ok",
+			result: check.DomainRegistrationResult{
+				Status:        check.OK,
+				ExpiresAt:     "2027-05-07T00:00:00Z",
+				DaysRemaining: intPtr(224),
+			},
+			expected: "Domain Reg   224 days (07 May 2027)",
+			status:   "",
+		},
+		{
+			name: "warn",
+			result: check.DomainRegistrationResult{
+				Status:        check.WARN,
+				ExpiresAt:     "2026-10-15T00:00:00Z",
+				DaysRemaining: intPtr(42),
+			},
+			expected: "Domain Reg   42 days (15 Oct 2026)",
+			status:   "WARN",
+		},
+		{
+			name: "fail",
+			result: check.DomainRegistrationResult{
+				Status:        check.FAIL,
+				ExpiresAt:     "2026-09-15T00:00:00Z",
+				DaysRemaining: intPtr(12),
+			},
+			expected: "Domain Reg   12 days (15 Sep 2026)",
+			status:   "FAIL",
+		},
+		{
+			name: "unknown",
+			result: check.DomainRegistrationResult{
+				Status: check.WARN,
+			},
+			expected: "Domain Reg   Unknown",
+			status:   "WARN",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report := &check.Report{
+				Domain: "example.com",
+				Mode:   "site",
+				Checks: check.Checks{
+					DomainRegistration: &tt.result,
+				},
+				Summary: check.Summary{Status: "WARNING"},
+			}
+
+			var buf bytes.Buffer
+			RenderDashboard(&buf, report)
+
+			if !bytes.Contains(buf.Bytes(), []byte(tt.expected)) {
+				t.Errorf("output missing %q\n%s", tt.expected, buf.String())
+			}
+			if tt.status != "" && !bytes.Contains(buf.Bytes(), []byte(tt.status)) {
+				t.Errorf("output missing status %q\n%s", tt.status, buf.String())
+			}
+		})
+	}
+}
+
+func intPtr(v int) *int {
+	return &v
 }
 
 func TestRenderMailDashboardOmitsSkippedChecks(t *testing.T) {
