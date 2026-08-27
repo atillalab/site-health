@@ -1,7 +1,10 @@
 package check
 
 import (
+	"bytes"
 	"errors"
+	"io"
+	"net/http"
 	"testing"
 )
 
@@ -346,6 +349,100 @@ func TestCheckHTTP_SkipRedirectStillFailsOnHTTPSError(t *testing.T) {
 	if r.failCount != 1 {
 		t.Errorf("failCount = %d, want 1", r.failCount)
 	}
+}
+
+func TestCheckLLMs_TextPlain(t *testing.T) {
+	r := &Runner{Domain: "example.com"}
+
+	client := &http.Client{
+		Transport: &mockLLMsTransport{
+			statusCode:  200,
+			contentType: "text/plain; charset=utf-8",
+			body:        []byte("# llms.txt"),
+		},
+	}
+
+	r.checkLLMsWithClient(client)
+
+	if r.warnCount != 0 {
+		t.Errorf("warnCount = %d, want 0", r.warnCount)
+	}
+	if r.failCount != 0 {
+		t.Errorf("failCount = %d, want 0", r.failCount)
+	}
+}
+
+func TestCheckLLMs_Soft404HTML(t *testing.T) {
+	// Many sites return their regular HTML page with 200 for /llms.txt.
+	// This should be reported as a soft 404, not a pass.
+	r := &Runner{Domain: "example.com"}
+
+	client := &http.Client{
+		Transport: &mockLLMsTransport{
+			statusCode:  200,
+			contentType: "text/html; charset=UTF-8",
+			body:        []byte("<html><body>regular page</body></html>"),
+		},
+	}
+
+	r.checkLLMsWithClient(client)
+
+	if r.warnCount != 1 {
+		t.Errorf("warnCount = %d, want 1", r.warnCount)
+	}
+}
+
+func TestCheckLLMs_NotFound(t *testing.T) {
+	r := &Runner{Domain: "example.com"}
+
+	client := &http.Client{
+		Transport: &mockLLMsTransport{
+			statusCode:  404,
+			contentType: "text/plain",
+			body:        []byte("not found"),
+		},
+	}
+
+	r.checkLLMsWithClient(client)
+
+	if r.warnCount != 1 {
+		t.Errorf("warnCount = %d, want 1", r.warnCount)
+	}
+}
+
+func TestCheckLLMs_RequestError(t *testing.T) {
+	r := &Runner{Domain: "example.com"}
+
+	client := &http.Client{
+		Transport: &mockLLMsTransport{
+			err: errors.New("connection refused"),
+		},
+	}
+
+	r.checkLLMsWithClient(client)
+
+	if r.warnCount != 1 {
+		t.Errorf("warnCount = %d, want 1", r.warnCount)
+	}
+}
+
+type mockLLMsTransport struct {
+	statusCode  int
+	contentType string
+	body        []byte
+	err         error
+}
+
+func (t *mockLLMsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.err != nil {
+		return nil, t.err
+	}
+	return &http.Response{
+		StatusCode: t.statusCode,
+		Header:     http.Header{"Content-Type": []string{t.contentType}},
+		Body:       io.NopCloser(bytes.NewReader(t.body)),
+		Request:    req,
+	}, nil
 }
 
 func fixedProbe(responses map[string]probeResult) func(string) probeResult {

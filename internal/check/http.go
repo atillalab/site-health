@@ -387,8 +387,6 @@ func checkParkedPatterns(body string, r *Runner) {
 func (r *Runner) CheckLLMs() {
 	r.Verbosef("\n\033[1m== llms.txt ==\033[0m\n")
 
-	u := "https://" + r.Domain + "/llms.txt"
-
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
@@ -402,6 +400,12 @@ func (r *Runner) CheckLLMs() {
 		},
 	}
 
+	r.checkLLMsWithClient(client)
+}
+
+func (r *Runner) checkLLMsWithClient(client *http.Client) {
+	u := "https://" + r.Domain + "/llms.txt"
+
 	resp, err := client.Get(u)
 	if err != nil {
 		errMsg := describeError(err)
@@ -410,11 +414,18 @@ func (r *Runner) CheckLLMs() {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == 200 {
-		r.Verbosef("\033[32mPASS\033[0m  /llms.txt\n")
-		r.Verbosef("      → %s\n", resp.Request.URL.String())
-		r.Verbosef("      → content-type: %s\n", resp.Header.Get("Content-Type"))
-	} else {
+	if resp.StatusCode != 200 {
 		r.Warn(fmt.Sprintf("/llms.txt — expected 200, got %d", resp.StatusCode))
+		return
 	}
+
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	if strings.HasPrefix(ct, "text/html") {
+		r.Warn("/llms.txt — returned HTML instead of a text file (possible soft 404)")
+		return
+	}
+
+	r.Verbosef("\033[32mPASS\033[0m  /llms.txt\n")
+	r.Verbosef("      → %s\n", resp.Request.URL.String())
+	r.Verbosef("      → content-type: %s\n", resp.Header.Get("Content-Type"))
 }
