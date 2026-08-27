@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>site-health web</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 5rem 0 2rem;
+            line-height: 1.6;
+            color: #333;
+            background: #f8f9fa;
+        }
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 56px;
+            background: #fff;
+            border-bottom: 1px solid #e5e5e5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            z-index: 50;
+            display: flex;
+            align-items: center;
+        }
+        .header-inner {
+            max-width: 840px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .sidebar-toggle {
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            color: #333;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .sidebar-toggle:hover { background: #f5f5f5; }
+        .sidebar-toggle svg {
+            width: 22px;
+            height: 22px;
+        }
+        .header-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+        .header-project {
+            margin-left: auto;
+            font-size: 0.9rem;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .header-project.hidden { display: none; }
+        .main-content {
+            max-width: 840px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+        .sidebar-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.3);
+            z-index: 99;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+        .sidebar-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 280px;
+            background: #fff;
+            border-right: 1px solid #e5e5e5;
+            box-shadow: 4px 0 12px rgba(0,0,0,0.08);
+            z-index: 100;
+            transform: translateX(-100%);
+            transition: transform 0.25s ease;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar.open {
+            transform: translateX(0);
+        }
+        .sidebar-header {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .sidebar-header h2 {
+            margin: 0;
+            font-size: 1.1rem;
+            color: #1a1a1a;
+        }
+        .sidebar-close {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            background: transparent;
+            color: #666;
+            border: none;
+            border-radius: 6px;
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+        .sidebar-close:hover { background: #f5f5f5; }
+        .sidebar-projects {
+            flex: 1;
+            overflow-y: auto;
+            list-style: none;
+            margin: 0;
+            padding: 0.5rem 0;
+        }
+        .sidebar-projects li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.6rem 1.25rem;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+        }
+        .sidebar-projects li:hover { background: #f8f9fa; }
+        .sidebar-projects li.active {
+            background: #f0f7ff;
+            border-left-color: #0066cc;
+        }
+        .project-name {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 0.95rem;
+        }
+        .project-actions-inline {
+            display: flex;
+            gap: 0.25rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s;
+        }
+        .sidebar-projects li:hover .project-actions-inline,
+        .sidebar-projects li.active .project-actions-inline {
+            opacity: 1;
+        }
+        .icon-btn {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            color: #666;
+            pointer-events: auto;
+        }
+        .icon-btn:hover { background: #e5e5e5; }
+        .icon-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+        .sidebar-footer {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid #eee;
+        }
+        .sidebar-footer button {
+            width: 100%;
+        }
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 1.5rem;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+        .card-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+        .text-btn {
+            background: transparent;
+            border: none;
+            color: #0066cc;
+            padding: 0;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        .text-btn:hover { text-decoration: underline; }
+        .text-btn.danger { color: #c5221f; }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        textarea {
+            width: 100%;
+            min-height: 140px;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.95rem;
+            resize: vertical;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #0066cc;
+        }
+        textarea:disabled {
+            background: #f5f5f5;
+            color: #555;
+            cursor: not-allowed;
+        }
+        .hint {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 0.4rem;
+        }
+        .actions {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+        }
+        .checkbox-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-top: 0.75rem;
+            font-size: 0.95rem;
+            color: #444;
+            cursor: pointer;
+        }
+        .checkbox-label input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        button {
+            padding: 0.6rem 1.2rem;
+            background: #0066cc;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        button:hover { background: #0052a3; }
+        button:disabled { background: #99c2ee; cursor: not-allowed; }
+        button.secondary {
+            background: #fff;
+            color: #0066cc;
+            border: 1px solid #0066cc;
+        }
+        button.secondary:hover { background: #f0f7ff; }
+        button.secondary:disabled {
+            background: #f5f5f5;
+            color: #99c2ee;
+            border-color: #99c2ee;
+        }
+        button.danger {
+            background: #fff;
+            color: #c5221f;
+            border: 1px solid #c5221f;
+        }
+        button.danger:hover { background: #fce8e8; }
+        button.small {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.9rem;
+        }
+        .message {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            border-radius: 6px;
+            display: none;
+        }
+        .message.success { background: #e6f4ea; color: #1e7e34; display: block; }
+        .message.error { background: #fbeaea; color: #c5221f; display: block; }
+        ul.domains {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        ul.domains li {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #eee;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+        ul.domains li:last-child { border-bottom: none; }
+        .empty { color: #888; font-style: italic; }
+        .trend {
+            display: inline-flex;
+            gap: 0.25rem;
+            align-items: center;
+        }
+        .trend .badge {
+            width: 10px;
+            height: 10px;
+            padding: 0;
+            border-radius: 50%;
+            min-width: 10px;
+        }
+        .trend .badge.HEALTHY { background: #34a853; }
+        .trend .badge.WARNING { background: #f9ab00; }
+        .trend .badge.UNHEALTHY { background: #ea4335; }
+        .trend .badge.UNKNOWN { background: #dadce0; }
+        table.results {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        table.results th,
+        table.results td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid #eee;
+        }
+        table.results th {
+            font-weight: 600;
+            color: #555;
+            background: #f8f9fa;
+        }
+        .domain-row { cursor: pointer; }
+        .domain-row:hover { background: #f8f9fa; }
+        .details-row { background: #fafafa; }
+        .details-row td { padding: 0; border-bottom: 1px solid #eee; }
+        .details-row .details-inner { padding: 0.75rem; }
+        .issue-list { list-style: none; margin: 0; padding: 0; }
+        .issue-list li { padding: 0.35rem 0; font-size: 0.9rem; }
+        .issue-list li:first-child { padding-top: 0; }
+        .issue-list li:last-child { padding-bottom: 0; }
+        .issue-FAIL { color: #c5221f; }
+        .issue-WARN { color: #b45f06; }
+        .issue-INFO { color: #1a73e8; }
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .badge.HEALTHY { background: #e6f4ea; color: #1e7e34; }
+        .badge.WARNING { background: #fff4e5; color: #b45f06; }
+        .badge.UNHEALTHY { background: #fbeaea; color: #c5221f; }
+        .hidden { display: none; }
+        .loading { color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-inner">
+            <button id="sidebar-toggle" class="sidebar-toggle hidden" type="button" aria-label="Open projects">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                    <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+                    <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                    <path d="M14 14h7M14 17.5h7M14 21h7"></path>
+                </svg>
+            </button>
+            <span class="header-title">site-health web</span>
+            <span id="header-project" class="header-project hidden"></span>
+        </div>
+    </header>
+
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+    <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h2>Projects</h2>
+            <button id="sidebar-close" class="sidebar-close" type="button" aria-label="Close projects">&times;</button>
+        </div>
+        <ul id="sidebar-projects" class="sidebar-projects"></ul>
+        <div class="sidebar-footer">
+            <button id="sidebar-new-project" type="button" class="secondary">New project</button>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <div class="card">
+            <div class="card-header">
+                <h2 id="domain-list-project-name">Domain list</h2>
+            </div>
+            <p class="hint" id="first-run-hint">Enter domains below and click <strong>Run</strong>. Your first project will be created automatically.</p>
+            <textarea id="domains" placeholder="example.com&#10;www.example.org&#10;shop.example.net"></textarea>
+            <div id="domain-status" class="hint"></div>
+            <div class="hint">Enter one domain per line.</div>
+            <label class="checkbox-label">
+                <input type="checkbox" id="skip-redirect">
+                Skip redirect check
+            </label>
+            <div class="actions">
+                <button id="check" type="button">Run</button>
+            </div>
+            <div id="message" class="message"></div>
+        </div>
+
+        <div id="results-card" class="card hidden">
+            <div class="card-header">
+                <h2>Results</h2>
+                <button id="clear-sessions" type="button" class="text-btn danger">Clear history</button>
+            </div>
+            <div id="results-status"></div>
+            <table class="results">
+                <thead>
+                    <tr>
+                        <th>Domain</th>
+                        <th>Latest</th>
+                        <th>Previous checks (last 5)</th>
+                        <th>Failures</th>
+                        <th>Warnings</th>
+                    </tr>
+                </thead>
+                <tbody id="results-body"></tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        const state = {
+            projects: [],
+            activeProject: null,
+            sessions: []
+        };
+
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+        const sidebarClose = document.getElementById('sidebar-close');
+        const sidebarProjects = document.getElementById('sidebar-projects');
+        const sidebarNewProject = document.getElementById('sidebar-new-project');
+        const headerProject = document.getElementById('header-project');
+        const domainsInput = document.getElementById('domains');
+        const checkButton = document.getElementById('check');
+        const skipRedirectCheckbox = document.getElementById('skip-redirect');
+        const messageEl = document.getElementById('message');
+        const clearSessionsBtn = document.getElementById('clear-sessions');
+        const firstRunHint = document.getElementById('first-run-hint');
+        const domainStatus = document.getElementById('domain-status');
+        const domainListProjectName = document.getElementById('domain-list-project-name');
+        const resultsCard = document.getElementById('results-card');
+        const resultsStatus = document.getElementById('results-status');
+        const resultsBody = document.getElementById('results-body');
+
+        function apiPath(path) {
+            return '/api/projects/' + encodeURIComponent(state.activeProject) + path;
+        }
+
+        async function ensureFirstProject(domains) {
+            if (state.projects.length > 0 && state.activeProject) {
+                return;
+            }
+            if (domains.length === 0) {
+                throw new Error('Enter at least one domain to create the first project.');
+            }
+            const name = domains[0];
+            const res = await fetch('/api/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            if (!res.ok) throw new Error('Failed to create first project');
+            const p = await res.json();
+            state.projects.push(p);
+            state.activeProject = p.id;
+            renderSidebar();
+        }
+
+        function getActiveProject() {
+            return state.projects.find(p => p.id === state.activeProject);
+        }
+
+        function suggestProjectName() {
+            const base = 'Project';
+            const existing = new Set(state.projects.map(p => p.name));
+            if (!existing.has(base)) {
+                return base;
+            }
+            let counter = 2;
+            while (true) {
+                const candidate = base + ' ' + counter;
+                if (!existing.has(candidate)) {
+                    return candidate;
+                }
+                counter++;
+            }
+        }
+
+        function getDomains() {
+            return domainsInput.value.split('\n').map(s => s.trim()).filter(s => s !== '');
+        }
+
+        async function loadProjects() {
+            try {
+                const res = await fetch('/api/projects');
+                const data = await res.json();
+                state.projects = data.projects || [];
+                state.activeProject = data.active_project;
+                renderSidebar();
+                if (state.activeProject) {
+                    await loadProjectData(state.activeProject);
+                } else {
+                    domainsInput.value = '';
+                    updateDomainStatus([]);
+                    state.sessions = [];
+                    renderResults(state.sessions, []);
+                    resultsCard.classList.add('hidden');
+                    domainListProjectName.textContent = 'Domain list';
+                    clearSessionsBtn.classList.add('hidden');
+                    domainsInput.disabled = false;
+                }
+            } catch (err) {
+                showMessage('Could not load projects: ' + err.message, true);
+            }
+        }
+
+        function openSidebar() {
+            sidebar.classList.add('open');
+            sidebarOverlay.classList.add('open');
+        }
+
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            sidebarOverlay.classList.remove('open');
+        }
+
+        function toggleSidebar() {
+            if (sidebar.classList.contains('open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        }
+
+        function renderSidebar() {
+            sidebarProjects.innerHTML = '';
+            if (state.projects.length === 0) {
+                sidebarToggle.classList.add('hidden');
+                headerProject.classList.add('hidden');
+                firstRunHint.classList.remove('hidden');
+                const li = document.createElement('li');
+                li.className = 'empty';
+                li.textContent = 'No projects yet';
+                sidebarProjects.appendChild(li);
+                return;
+            }
+
+            sidebarToggle.classList.remove('hidden');
+            firstRunHint.classList.add('hidden');
+            const active = getActiveProject();
+            if (active) {
+                headerProject.textContent = active.name;
+                headerProject.classList.remove('hidden');
+                domainListProjectName.textContent = active.name;
+            } else {
+                headerProject.classList.add('hidden');
+                domainListProjectName.textContent = 'Domain list';
+            }
+
+            for (const p of state.projects) {
+                const li = document.createElement('li');
+                li.className = p.id === state.activeProject ? 'active' : '';
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'project-name';
+                nameSpan.textContent = p.name;
+                nameSpan.style.cursor = 'pointer';
+
+                const selectProject = (e) => {
+                    if (e && e.target.closest('button')) return;
+                    switchProject(p.id);
+                };
+                li.addEventListener('click', selectProject);
+                nameSpan.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectProject(e);
+                });
+
+                const actions = document.createElement('div');
+                actions.className = 'project-actions-inline';
+
+                const renameBtn = document.createElement('button');
+                renameBtn.className = 'icon-btn';
+                renameBtn.type = 'button';
+                renameBtn.title = 'Rename';
+                renameBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
+                renameBtn.addEventListener('click', () => renameProject(p));
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'icon-btn';
+                deleteBtn.type = 'button';
+                deleteBtn.title = 'Delete';
+                deleteBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+                deleteBtn.addEventListener('click', () => deleteProject(p));
+
+                actions.appendChild(renameBtn);
+                actions.appendChild(deleteBtn);
+                li.appendChild(nameSpan);
+                li.appendChild(actions);
+                sidebarProjects.appendChild(li);
+            }
+        }
+
+        async function switchProject(id) {
+            try {
+                const res = await fetch('/api/active-project', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                if (!res.ok) throw new Error('Failed to switch project');
+                state.activeProject = id;
+                renderSidebar();
+                closeSidebar();
+                await loadProjectData(id);
+            } catch (err) {
+                showMessage('Error: ' + err.message, true);
+            }
+        }
+
+        async function loadProjectData(projectID) {
+            try {
+                const [domainsRes, sessionsRes, settingsRes] = await Promise.all([
+                    fetch('/api/projects/' + encodeURIComponent(projectID) + '/domains'),
+                    fetch('/api/projects/' + encodeURIComponent(projectID) + '/sessions'),
+                    fetch('/api/projects/' + encodeURIComponent(projectID) + '/settings')
+                ]);
+                const domainsData = await domainsRes.json();
+                const sessionsData = await sessionsRes.json();
+                const settingsData = await settingsRes.json();
+                const domains = domainsData.domains || [];
+                state.sessions = sessionsData.sessions || [];
+                domainsInput.value = domains.join('\n');
+                updateDomainStatus(domains);
+                skipRedirectCheckbox.checked = !!settingsData.skip_redirect;
+                renderResults(state.sessions, domains);
+            } catch (err) {
+                updateDomainStatus([]);
+                state.sessions = [];
+                skipRedirectCheckbox.checked = false;
+                renderResults(state.sessions, []);
+                showMessage('Could not load project data: ' + err.message, true);
+            }
+        }
+
+        function updateDomainStatus(domains) {
+            const count = (domains || []).length;
+            if (count === 0) {
+                domainStatus.textContent = 'No domains in this project.';
+            } else if (count === 1) {
+                domainStatus.textContent = '1 domain in this project.';
+            } else {
+                domainStatus.textContent = count + ' domains in this project.';
+            }
+        }
+
+        function showMessage(text, isError) {
+            messageEl.textContent = text;
+            messageEl.className = 'message ' + (isError ? 'error' : 'success');
+            setTimeout(() => { messageEl.className = 'message'; }, 3000);
+        }
+
+        skipRedirectCheckbox.addEventListener('change', async () => {
+            if (!state.activeProject) return;
+            try {
+                await fetch(apiPath('/settings'), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ skip_redirect: skipRedirectCheckbox.checked })
+                });
+            } catch (err) {
+                showMessage('Could not save settings: ' + err.message, true);
+            }
+        });
+
+        sidebarToggle.addEventListener('click', toggleSidebar);
+        sidebarClose.addEventListener('click', closeSidebar);
+        sidebarOverlay.addEventListener('click', closeSidebar);
+
+        sidebarNewProject.addEventListener('click', async () => {
+            const suggested = suggestProjectName();
+            const name = prompt('Project name:', suggested);
+            if (!name || !name.trim()) return;
+            try {
+                const res = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name.trim() })
+                });
+                if (!res.ok) throw new Error('Failed to create project');
+                const p = await res.json();
+                await loadProjects();
+                await switchProject(p.id);
+                showMessage('Project "' + p.name + '" created.', false);
+            } catch (err) {
+                showMessage('Error: ' + err.message, true);
+            }
+        });
+
+        async function renameProject(p) {
+            const name = prompt('New project name:', p.name);
+            if (!name || !name.trim()) return;
+            try {
+                const res = await fetch('/api/projects/' + encodeURIComponent(p.id), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name.trim() })
+                });
+                if (!res.ok) throw new Error('Failed to rename project');
+                await loadProjects();
+                showMessage('Project renamed.', false);
+            } catch (err) {
+                showMessage('Error: ' + err.message, true);
+            }
+        }
+
+        async function deleteProject(p) {
+            if (!confirm('Delete project "' + p.name + '" and all of its sessions? This cannot be undone.')) return;
+            try {
+                const res = await fetch('/api/projects/' + encodeURIComponent(p.id), {
+                    method: 'DELETE'
+                });
+                if (!res.ok) throw new Error('Failed to delete project');
+                await loadProjects();
+                if (state.projects.length === 0) {
+                    closeSidebar();
+                }
+                showMessage('Project deleted.', false);
+            } catch (err) {
+                showMessage('Error: ' + err.message, true);
+            }
+        }
+
+        checkButton.addEventListener('click', async () => {
+            const domains = getDomains();
+            if (domains.length === 0) {
+                showMessage('Enter at least one domain to check.', true);
+                return;
+            }
+            checkButton.disabled = true;
+            try {
+                await ensureFirstProject(domains);
+                const saveRes = await fetch(apiPath('/domains'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ domains })
+                });
+                if (!saveRes.ok) {
+                    const body = await saveRes.text();
+                    throw new Error(body || 'Save failed');
+                }
+                const saveData = await saveRes.json();
+                updateDomainStatus(saveData.domains);
+            } catch (err) {
+                showMessage('Error: ' + err.message, true);
+                checkButton.disabled = false;
+                return;
+            }
+            resultsCard.classList.remove('hidden');
+            resultsStatus.className = 'loading';
+            resultsStatus.textContent = 'Running checks...';
+            resultsBody.innerHTML = '';
+            try {
+                const res = await fetch(apiPath('/check'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ domains, skip_redirect: skipRedirectCheckbox.checked })
+                });
+                if (!res.ok) {
+                    const body = await res.text();
+                    throw new Error(body || 'Check failed');
+                }
+                const data = await res.json();
+                const sessionsRes = await fetch(apiPath('/sessions'));
+                const sessionsData = await sessionsRes.json();
+                state.sessions = sessionsData.sessions || [];
+                renderResults(state.sessions, domains);
+                resultsStatus.className = '';
+            } catch (err) {
+                resultsStatus.className = '';
+                showMessage('Error: ' + err.message, true);
+                resultsBody.innerHTML = '<tr><td colspan="5">Check failed: ' + escapeHtml(err.message) + '</td></tr>';
+            } finally {
+                checkButton.disabled = false;
+            }
+        });
+
+        clearSessionsBtn.addEventListener('click', async () => {
+            if (!confirm('Delete all sessions for this project? This cannot be undone.')) return;
+            clearSessionsBtn.disabled = true;
+            try {
+                const res = await fetch(apiPath('/sessions'), { method: 'DELETE' });
+                if (!res.ok) throw new Error('Failed to clear sessions');
+                state.sessions = [];
+                renderResults(state.sessions, getDomains());
+                showMessage('History cleared.', false);
+            } catch (err) {
+                showMessage('Error: ' + err.message, true);
+            } finally {
+                clearSessionsBtn.disabled = false;
+            }
+        });
+
+        function formatDomainList(domains) {
+            if (!domains || domains.length === 0) return '';
+            let display;
+            if (domains.length === 1) {
+                display = domains[0];
+            } else if (domains.length === 2) {
+                display = domains.join(', ');
+            } else {
+                display = domains.slice(0, 2).join(', ') + '...';
+            }
+            return ' (' + display + ')';
+        }
+
+        function formatDate(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            return d.toLocaleString();
+        }
+
+        function renderResults(sessions, domains) {
+            resultsBody.innerHTML = '';
+            if (!sessions || sessions.length === 0) {
+                resultsCard.classList.add('hidden');
+                return;
+            }
+            resultsCard.classList.remove('hidden');
+
+            const domainMap = {};
+            for (const d of domains) {
+                domainMap[d] = { latest: null, history: [] };
+            }
+
+            for (const session of sessions) {
+                const ts = session.timestamp;
+                const id = session.id;
+                for (const r of session.results || []) {
+                    if (!domainMap[r.domain]) continue;
+                    const entry = domainMap[r.domain];
+                    const item = {
+                        status: r.status || 'UNKNOWN',
+                        failures: r.failures ?? 0,
+                        warnings: r.warnings ?? 0,
+                        timestamp: ts,
+                        id: id,
+                        issues: r.issues || []
+                    };
+                    if (!entry.latest) {
+                        entry.latest = item;
+                    } else {
+                        entry.history.push(item);
+                    }
+                }
+            }
+
+            let unhealthy = 0;
+            let warningCount = 0;
+            for (const d of domains) {
+                const entry = domainMap[d];
+                if (!entry.latest) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${escapeHtml(d)}</td><td colspan="4" class="empty">No check data yet</td>`;
+                    resultsBody.appendChild(tr);
+                    continue;
+                }
+                if (entry.latest.status === 'UNHEALTHY') unhealthy++;
+                if (entry.latest.status === 'WARNING') warningCount++;
+                const trend = entry.history.slice(0, 5).map(h => {
+                    const title = `${formatDate(h.timestamp)} · ${h.status}`;
+                    return `<span class="badge ${escapeHtml(h.status)}" title="${escapeHtml(title)}"></span>`;
+                }).join('');
+                const tr = document.createElement('tr');
+                tr.className = 'domain-row';
+                tr.dataset.domain = d;
+                tr.innerHTML = `
+                    <td>${escapeHtml(d)}</td>
+                    <td><span class="badge ${escapeHtml(entry.latest.status)}">${escapeHtml(entry.latest.status)}</span></td>
+                    <td><div class="trend">${trend}</div></td>
+                    <td>${entry.latest.failures}</td>
+                    <td>${entry.latest.warnings}</td>
+                `;
+                tr.addEventListener('click', () => toggleDomainDetails(tr, entry.latest.issues));
+                resultsBody.appendChild(tr);
+            }
+
+            const summaryParts = [];
+            if (unhealthy) summaryParts.push(`${unhealthy} unhealthy`);
+            if (warningCount) summaryParts.push(`${warningCount} warning${warningCount === 1 ? '' : 's'}`);
+            const summary = summaryParts.length === 0 ? 'All domains are healthy' : summaryParts.join(', ');
+            resultsStatus.textContent = 'Latest check: ' + summary + formatDomainList(domains);
+        }
+
+        function renderIssueList(issues) {
+            if (!issues || issues.length === 0) {
+                return '<p class="empty">No issues</p>';
+            }
+            const list = issues.map(i => {
+                const level = escapeHtml(i.level || 'INFO');
+                return `<li class="issue-${level}"><strong>${level}</strong> · ${escapeHtml(i.message)}</li>`;
+            }).join('');
+            return `<ul class="issue-list">${list}</ul>`;
+        }
+
+        function toggleDomainDetails(row, issues) {
+            const next = row.nextElementSibling;
+            if (next && next.classList.contains('details-row')) {
+                next.remove();
+                return;
+            }
+            const detailsTr = document.createElement('tr');
+            detailsTr.className = 'details-row';
+            detailsTr.innerHTML = `<td colspan="5"><div class="details-inner">${renderIssueList(issues)}</div></td>`;
+            row.after(detailsTr);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        loadProjects();
+    </script>
+</body>
+</html>

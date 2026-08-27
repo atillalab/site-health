@@ -10,6 +10,7 @@
 - Vet: `go vet ./...`
 - Build local binary: `go build -o bin/site-health .`
 - Check version: `bin/site-health --version`
+- Run web UI: `bin/site-health web [--port <port>]`
 
 ## Versioning
 

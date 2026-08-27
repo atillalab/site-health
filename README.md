@@ -2,7 +2,7 @@
 
 A fast CLI for checking website and domain health.
 
-> **Status:** Go rewrite complete (v0.15.0)
+> **Status:** Go rewrite complete (v0.16.0)
 
 ## Quick Start
 
@@ -17,6 +17,8 @@ site-health --skip-redirect example.com
 site-health --format json example.com
 site-health --doctor
 site-health --init-config
+site-health web
+site-health web --port 8081
 ```
 
 ## Features
@@ -47,6 +49,7 @@ Zero external dependencies — stdlib only:
 - Machine-readable JSON output for automation and monitoring
 - Config file and environment variables for default flags
 - Self-diagnostic `--doctor` mode for the binary and local environment
+- Local web UI for project-based checks and session history (`site-health web`)
 
 ## Usage
 
@@ -228,7 +231,7 @@ Example:
 ```json
 {
   "tool": "site-health",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "domain": "example.com",
   "mode": "site",
   "expected_hosts": ["example.com"],
@@ -276,8 +279,8 @@ site-health doctor
 ──────────────────
 Binary path:      /opt/homebrew/bin/site-health
 Install method:   Homebrew
-Current version:  0.15.0
-Latest version:   0.15.0    (up to date)
+Current version:  0.16.0
+Latest version:   0.16.0    (up to date)
 
 Environment
 ───────────
@@ -294,6 +297,30 @@ Status: HEALTHY
 ```
 
 The latest-version check uses the GitHub Releases API. If the network is unavailable or the API rate-limit is exceeded, the check reports the error gracefully without failing the whole command.
+
+## Web UI
+
+Run a local web interface for managing projects, domains, and check history in the browser:
+
+```bash
+site-health web
+```
+
+The UI opens at `http://localhost:8080` by default. Use `--port` to choose a different port:
+
+```bash
+site-health web --port 8081
+```
+
+### Web UI features
+
+- **Projects**: organize checks into separate projects, each with its own domain list and session history.
+- **Run checks**: enter domains and run health checks with optional flags such as **Skip redirect check**.
+- **Results table**: see the latest status for each domain plus a trend of the last 5 checks.
+- **Issue details**: click any domain row to expand the issue list (FAIL, WARN, INFO).
+- **Session history**: every run is saved as a session; clear history with **Clear history**.
+
+Data is stored locally in the platform-specific user config directory (e.g. `~/.config/site-health/web` on Linux or `~/Library/Application Support/site-health/web` on macOS).
 
 ## Configuration
 

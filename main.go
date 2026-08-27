@@ -17,6 +17,7 @@ import (
 	"github.com/atillalab/site-health/internal/domain"
 	"github.com/atillalab/site-health/internal/output"
 	"github.com/atillalab/site-health/internal/version"
+	"github.com/atillalab/site-health/internal/web"
 )
 
 type boolFlag struct {
@@ -113,6 +114,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Example: site-health --format json example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --init-config\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --doctor\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health web\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health web --port 8081\n")
+	}
+
+	// Handle the 'web' subcommand before flag parsing so that web-specific
+	// flags can be parsed separately.
+	if len(os.Args) > 1 && os.Args[1] == "web" {
+		if err := web.Run(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	flag.Parse()

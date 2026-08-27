@@ -2,6 +2,7 @@ package check
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -34,6 +35,26 @@ func (s Status) String() string {
 
 func (s Status) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + s.String() + `"`), nil
+}
+
+func (s *Status) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	switch str {
+	case "OK":
+		*s = OK
+	case "WARN":
+		*s = WARN
+	case "FAIL":
+		*s = FAIL
+	case "SKIP":
+		*s = SKIP
+	default:
+		return fmt.Errorf("unknown status: %s", str)
+	}
+	return nil
 }
 
 func Escalate(current, incoming Status) Status {
