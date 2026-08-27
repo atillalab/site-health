@@ -2,7 +2,7 @@
 
 A fast CLI for checking website and domain health.
 
-> **Status:** Go rewrite complete (v0.9.3)
+> **Status:** Go rewrite complete (v0.9.4)
 
 ## Quick Start
 
@@ -178,7 +178,7 @@ Example:
 ```json
 {
   "tool": "site-health",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "domain": "example.com",
   "mode": "site",
   "expected_url": "https://example.com/",
