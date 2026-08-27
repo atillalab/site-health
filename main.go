@@ -83,6 +83,7 @@ func main() {
 	if *format == "text" {
 		*format = "dashboard"
 	}
+	verboseEnabled := effectiveVerbose(*verbose, *format)
 
 	args := flag.Args()
 	if len(args) == 0 {
@@ -105,7 +106,7 @@ func main() {
 	runner := &check.Runner{
 		Domain:     domainName,
 		MailOnly:   *mailOnly,
-		Verbose:    *verbose,
+		Verbose:    verboseEnabled,
 		SkipMail:   *skipMail,
 		MailChecks: selectedMailChecks,
 		SkipLLMs:   *skipLLMs,
@@ -168,6 +169,10 @@ func validateOptions(mailOnly, skipMail, mailChecksSet, skipMailChecksSet bool, 
 		return fmt.Errorf("no mail checks selected; use --skip-mail to skip all mail checks in site mode")
 	}
 	return nil
+}
+
+func effectiveVerbose(verbose bool, format string) bool {
+	return verbose && format != "json"
 }
 
 func resolveMailChecks(mailChecks, skipMailChecks mailCheckListFlag) (check.MailChecks, error) {

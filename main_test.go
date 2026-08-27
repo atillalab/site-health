@@ -36,6 +36,30 @@ func TestValidateOptions(t *testing.T) {
 	}
 }
 
+func TestEffectiveVerbose(t *testing.T) {
+	tests := []struct {
+		name    string
+		verbose bool
+		format  string
+		want    bool
+	}{
+		{name: "verbose suppressed for json", verbose: true, format: "json", want: false},
+		{name: "verbose enabled for dashboard", verbose: true, format: "dashboard", want: true},
+		{name: "verbose enabled for text", verbose: true, format: "text", want: true},
+		{name: "verbose disabled for dashboard", verbose: false, format: "dashboard", want: false},
+		{name: "verbose disabled for json", verbose: false, format: "json", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := effectiveVerbose(tt.verbose, tt.format)
+			if got != tt.want {
+				t.Errorf("effectiveVerbose(%v, %q) = %v, want %v", tt.verbose, tt.format, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseMailCheckList(t *testing.T) {
 	tests := []struct {
 		name    string
