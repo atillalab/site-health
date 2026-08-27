@@ -237,6 +237,117 @@ func TestCheckHTTP_Subdomain(t *testing.T) {
 	}
 }
 
+func TestCheckHTTP_SkipRedirect(t *testing.T) {
+	r := &Runner{
+		Domain:       "example.com",
+		ExpectedURL:  "https://example.com/",
+		SkipRedirect: true,
+	}
+
+	probe := fixedProbe(map[string]probeResult{
+		"http://example.com":      {StatusCode: 200, FinalURL: "https://example.com/"},
+		"http://www.example.com":  {StatusCode: 200, FinalURL: "https://www.example.com/"},
+		"https://www.example.com": {StatusCode: 200, FinalURL: "https://www.example.com/"},
+		"https://example.com":     {StatusCode: 200, FinalURL: "https://example.com/"},
+	})
+
+	redirect, https, response, _ := r.checkHTTPWithProbe(probe)
+
+	if redirect != SKIP {
+		t.Errorf("redirect status = %v, want SKIP", redirect)
+	}
+	if https != OK {
+		t.Errorf("https status = %v, want OK", https)
+	}
+	if response != OK {
+		t.Errorf("response status = %v, want OK", response)
+	}
+	if r.failCount != 0 {
+		t.Errorf("failCount = %d, want 0", r.failCount)
+	}
+}
+
+func TestCheckHTTP_SkipRedirectIgnoresHTTPError(t *testing.T) {
+	r := &Runner{
+		Domain:       "example.com",
+		ExpectedURL:  "https://example.com/",
+		SkipRedirect: true,
+	}
+
+	probe := fixedProbe(map[string]probeResult{
+		"http://example.com":      {Error: errors.New("connection refused")},
+		"http://www.example.com":  {Error: errors.New("connection refused")},
+		"https://www.example.com": {StatusCode: 200, FinalURL: "https://www.example.com/"},
+		"https://example.com":     {StatusCode: 200, FinalURL: "https://example.com/"},
+	})
+
+	redirect, https, _, _ := r.checkHTTPWithProbe(probe)
+
+	if redirect != SKIP {
+		t.Errorf("redirect status = %v, want SKIP", redirect)
+	}
+	if https != OK {
+		t.Errorf("https status = %v, want OK", https)
+	}
+	if r.failCount != 0 {
+		t.Errorf("failCount = %d, want 0", r.failCount)
+	}
+}
+
+func TestCheckHTTP_SkipRedirectStillFailsOnHTTPSDowngrade(t *testing.T) {
+	r := &Runner{
+		Domain:       "example.com",
+		ExpectedURL:  "https://example.com/",
+		SkipRedirect: true,
+	}
+
+	probe := fixedProbe(map[string]probeResult{
+		"http://example.com":      {StatusCode: 200, FinalURL: "https://example.com/"},
+		"http://www.example.com":  {StatusCode: 200, FinalURL: "https://example.com/"},
+		"https://www.example.com": {StatusCode: 200, FinalURL: "https://example.com/"},
+		"https://example.com":     {StatusCode: 200, FinalURL: "http://example.com/"},
+	})
+
+	redirect, https, _, _ := r.checkHTTPWithProbe(probe)
+
+	if redirect != FAIL {
+		t.Errorf("redirect status = %v, want FAIL", redirect)
+	}
+	if https != FAIL {
+		t.Errorf("https status = %v, want FAIL", https)
+	}
+	if r.failCount != 1 {
+		t.Errorf("failCount = %d, want 1", r.failCount)
+	}
+}
+
+func TestCheckHTTP_SkipRedirectStillFailsOnHTTPSError(t *testing.T) {
+	r := &Runner{
+		Domain:       "example.com",
+		ExpectedURL:  "https://example.com/",
+		SkipRedirect: true,
+	}
+
+	probe := fixedProbe(map[string]probeResult{
+		"http://example.com":      {StatusCode: 200, FinalURL: "https://example.com/"},
+		"http://www.example.com":  {StatusCode: 200, FinalURL: "https://example.com/"},
+		"https://www.example.com": {StatusCode: 200, FinalURL: "https://example.com/"},
+		"https://example.com":     {Error: errors.New("tls: bad certificate")},
+	})
+
+	redirect, https, _, _ := r.checkHTTPWithProbe(probe)
+
+	if redirect != SKIP {
+		t.Errorf("redirect status = %v, want SKIP", redirect)
+	}
+	if https != FAIL {
+		t.Errorf("https status = %v, want FAIL", https)
+	}
+	if r.failCount != 1 {
+		t.Errorf("failCount = %d, want 1", r.failCount)
+	}
+}
+
 func fixedProbe(responses map[string]probeResult) func(string) probeResult {
 	return func(url string) probeResult {
 		if r, ok := responses[url]; ok {

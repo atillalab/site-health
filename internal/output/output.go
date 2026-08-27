@@ -9,6 +9,7 @@ var (
 	green  = "\033[32m"
 	red    = "\033[31m"
 	yellow = "\033[33m"
+	gray   = "\033[90m"
 	bold   = "\033[1m"
 	reset  = "\033[0m"
 )
@@ -18,6 +19,7 @@ func init() {
 		green = ""
 		red = ""
 		yellow = ""
+		gray = ""
 		bold = ""
 		reset = ""
 	}
@@ -39,6 +41,8 @@ func statusColor(status string) string {
 		return yellow
 	case "FAIL", "UNHEALTHY":
 		return red
+	case "SKIP":
+		return gray
 	default:
 		return reset
 	}

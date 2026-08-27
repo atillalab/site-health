@@ -16,6 +16,7 @@ const (
 	OK Status = iota
 	WARN
 	FAIL
+	SKIP
 )
 
 func (s Status) String() string {
@@ -24,6 +25,8 @@ func (s Status) String() string {
 		return "WARN"
 	case FAIL:
 		return "FAIL"
+	case SKIP:
+		return "SKIP"
 	default:
 		return "OK"
 	}
@@ -34,6 +37,12 @@ func (s Status) MarshalJSON() ([]byte, error) {
 }
 
 func Escalate(current, incoming Status) Status {
+	if current == SKIP {
+		return incoming
+	}
+	if incoming == SKIP {
+		return current
+	}
 	if incoming > current {
 		return incoming
 	}
@@ -157,13 +166,14 @@ func (m MailChecks) EnabledCount() int {
 }
 
 type Runner struct {
-	Domain      string
-	ExpectedURL string
-	MailOnly    bool
-	Verbose     bool
-	SkipMail    bool
-	MailChecks  MailChecks
-	SkipLLMs    bool
+	Domain       string
+	ExpectedURL  string
+	MailOnly     bool
+	Verbose      bool
+	SkipMail     bool
+	MailChecks   MailChecks
+	SkipLLMs     bool
+	SkipRedirect bool
 
 	ForwardingAutoDetected bool
 	ForwardingAmbiguous    bool

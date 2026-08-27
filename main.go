@@ -41,10 +41,11 @@ func main() {
 	flag.Var(&mailChecks, "mail-checks", "Comma-separated mail checks to run: mx, spf, dmarc")
 	flag.Var(&skipMailChecks, "skip-mail-checks", "Comma-separated mail checks to skip: mx, spf, dmarc")
 	skipLLMs := flag.Bool("skip-llms-txt", false, "Skip the optional /llms.txt check")
+	skipRedirect := flag.Bool("skip-redirect", false, "Skip the canonical redirect check")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--format <dashboard|json>] [--version] <domain>\n")
+		fmt.Fprintf(os.Stderr, "Usage: site-health [--mail] [--verbose] [--expected-url <url>] [--skip-mail] [--mail-checks <mx,spf,dmarc>] [--skip-mail-checks <mx,spf,dmarc>] [--skip-llms-txt] [--skip-redirect] [--format <dashboard|json>] [--version] <domain>\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --mail-checks spf example.com\n")
@@ -52,6 +53,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Example: site-health --verbose example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-mail example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --skip-llms-txt example.com\n")
+		fmt.Fprintf(os.Stderr, "Example: site-health --skip-redirect example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --expected-url https://example.org/ example.com\n")
 		fmt.Fprintf(os.Stderr, "Example: site-health --format json example.com\n")
 	}
@@ -104,12 +106,13 @@ func main() {
 	}
 
 	runner := &check.Runner{
-		Domain:     domainName,
-		MailOnly:   *mailOnly,
-		Verbose:    verboseEnabled,
-		SkipMail:   *skipMail,
-		MailChecks: selectedMailChecks,
-		SkipLLMs:   *skipLLMs,
+		Domain:       domainName,
+		MailOnly:     *mailOnly,
+		Verbose:      verboseEnabled,
+		SkipMail:     *skipMail,
+		MailChecks:   selectedMailChecks,
+		SkipLLMs:     *skipLLMs,
+		SkipRedirect: *skipRedirect,
 	}
 
 	if *expectedURL != "" {

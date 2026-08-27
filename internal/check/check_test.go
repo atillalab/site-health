@@ -12,6 +12,7 @@ func TestStatusString(t *testing.T) {
 		{OK, "OK"},
 		{WARN, "WARN"},
 		{FAIL, "FAIL"},
+		{SKIP, "SKIP"},
 		{Status(99), "OK"},
 	}
 
@@ -33,6 +34,7 @@ func TestStatusMarshalJSON(t *testing.T) {
 		{OK, `"OK"`},
 		{WARN, `"WARN"`},
 		{FAIL, `"FAIL"`},
+		{SKIP, `"SKIP"`},
 	}
 
 	for _, tt := range tests {
@@ -63,6 +65,12 @@ func TestEscalate(t *testing.T) {
 		{FAIL, OK, FAIL},
 		{FAIL, WARN, FAIL},
 		{FAIL, FAIL, FAIL},
+		{OK, SKIP, OK},
+		{WARN, SKIP, WARN},
+		{FAIL, SKIP, FAIL},
+		{SKIP, OK, OK},
+		{SKIP, WARN, WARN},
+		{SKIP, FAIL, FAIL},
 	}
 
 	for _, tt := range tests {

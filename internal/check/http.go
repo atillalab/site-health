@@ -59,7 +59,11 @@ func (r *Runner) CheckHTTP() (redirectStatus, httpsStatus, responseStatus Status
 }
 
 func (r *Runner) checkHTTPWithProbe(probe func(string) probeResult) (redirectStatus, httpsStatus, responseStatus Status, responseMs *int) {
-	redirectStatus = OK
+	if r.SkipRedirect {
+		redirectStatus = SKIP
+	} else {
+		redirectStatus = OK
+	}
 	httpsStatus = OK
 	responseStatus = OK
 
@@ -86,11 +90,15 @@ func (r *Runner) checkHTTPWithProbe(probe func(string) probeResult) (redirectSta
 
 		if result.Error != nil {
 			errMsg := describeError(result.Error)
-			redirectStatus = FAIL
+			if !r.SkipRedirect {
+				redirectStatus = FAIL
+			}
 			if isHTTPS {
 				httpsStatus = FAIL
 			}
-			r.Fail(fmt.Sprintf("%s — %s", u, errMsg))
+			if isHTTPS || !r.SkipRedirect {
+				r.Fail(fmt.Sprintf("%s — %s", u, errMsg))
+			}
 			continue
 		}
 
@@ -100,16 +108,18 @@ func (r *Runner) checkHTTPWithProbe(probe func(string) probeResult) (redirectSta
 			r.Fail(fmt.Sprintf("%s — downgraded to %s (expected %s)", u, result.FinalURL, r.ExpectedURL))
 		}
 
-		if result.StatusCode != 200 {
-			redirectStatus = FAIL
-			r.Fail(fmt.Sprintf("%s — expected status 200, got %d (expected %s)", u, result.StatusCode, r.ExpectedURL))
-		} else if domain.ExtractHost(result.FinalURL) != domain.ExtractHost(r.ExpectedURL) {
-			redirectStatus = FAIL
-			r.Fail(fmt.Sprintf("%s — redirected to %s (expected %s)", u, result.FinalURL, r.ExpectedURL))
-		} else if domain.ExtractHost(r.ExpectedURL) != r.Domain {
-			r.Verbosef("\033[32mPASS\033[0m  %s — forwarded to expected URL\n", u)
-		} else {
-			r.Verbosef("\033[32mPASS\033[0m  %s\n", u)
+		if !r.SkipRedirect {
+			if result.StatusCode != 200 {
+				redirectStatus = FAIL
+				r.Fail(fmt.Sprintf("%s — expected status 200, got %d (expected %s)", u, result.StatusCode, r.ExpectedURL))
+			} else if domain.ExtractHost(result.FinalURL) != domain.ExtractHost(r.ExpectedURL) {
+				redirectStatus = FAIL
+				r.Fail(fmt.Sprintf("%s — redirected to %s (expected %s)", u, result.FinalURL, r.ExpectedURL))
+			} else if domain.ExtractHost(r.ExpectedURL) != r.Domain {
+				r.Verbosef("\033[32mPASS\033[0m  %s — forwarded to expected URL\n", u)
+			} else {
+				r.Verbosef("\033[32mPASS\033[0m  %s\n", u)
+			}
 		}
 
 		r.Verbosef("      → final: %s\n", result.FinalURL)
