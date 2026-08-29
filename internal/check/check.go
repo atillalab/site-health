@@ -76,15 +76,15 @@ type Issue struct {
 }
 
 type Report struct {
-	Tool         string     `json:"tool"`
-	Version      string     `json:"version"`
-	Domain       string     `json:"domain"`
+	Tool          string     `json:"tool"`
+	Version       string     `json:"version"`
+	Domain        string     `json:"domain"`
 	Mode          string     `json:"mode"`
 	ExpectedHosts []string   `json:"expected_hosts,omitempty"`
 	Forwarding    Forwarding `json:"forwarding,omitempty"`
-	Checks       Checks     `json:"checks"`
-	Issues       []Issue    `json:"issues"`
-	Summary      Summary    `json:"summary"`
+	Checks        Checks     `json:"checks"`
+	Issues        []Issue    `json:"issues"`
+	Summary       Summary    `json:"summary"`
 }
 
 type Forwarding struct {
@@ -196,6 +196,9 @@ type Runner struct {
 	MailChecks    MailChecks
 	SkipLLMs      bool
 	SkipRedirect  bool
+	// PublicOnly applies SSRF protections to web-originated checks. CLI checks
+	// intentionally retain their historical ability to inspect private hosts.
+	PublicOnly bool
 
 	ForwardingAutoDetected bool
 	ForwardingAmbiguous    bool

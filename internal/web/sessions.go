@@ -25,7 +25,10 @@ var dataDirOverride string
 // dataDir returns the directory used for web UI data and creates it if needed.
 func dataDir() (string, error) {
 	if dataDirOverride != "" {
-		if err := os.MkdirAll(dataDirOverride, 0o755); err != nil {
+		if err := os.MkdirAll(dataDirOverride, 0o700); err != nil {
+			return "", err
+		}
+		if err := os.Chmod(dataDirOverride, 0o700); err != nil {
 			return "", err
 		}
 		return dataDirOverride, nil
@@ -35,7 +38,10 @@ func dataDir() (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(cfgDir, "site-health", "web")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
 		return "", err
 	}
 	return dir, nil
@@ -87,7 +93,7 @@ func saveDomains(projectID string, domains []string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // clearDomains removes the persisted domain list for a project.
@@ -107,7 +113,7 @@ func newSessionID(t time.Time) string {
 // saveSession persists a check run for a project and returns the created session.
 func saveSession(projectID string, domains []string, results []*check.Report) (*Session, error) {
 	dir := projectSessionsDir(projectID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
 	now := time.Now()
@@ -122,7 +128,7 @@ func saveSession(projectID string, domains []string, results []*check.Report) (*
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return nil, err
 	}
 	return session, nil
@@ -204,6 +210,9 @@ func listSessionSummaries(projectID string) ([]*SessionSummary, error) {
 
 // loadSession reads a session file by project ID and session ID.
 func loadSession(projectID, sessionID string) (*Session, error) {
+	if !projectIDRe.MatchString(projectID) || !sessionIDRe.MatchString(sessionID) {
+		return nil, os.ErrInvalid
+	}
 	path := filepath.Join(projectSessionsDir(projectID), sessionID+".json")
 	data, err := os.ReadFile(path)
 	if err != nil {

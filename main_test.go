@@ -11,14 +11,14 @@ import (
 
 func TestValidateOptions(t *testing.T) {
 	tests := []struct {
-		name      string
-		mail      bool
-		whois     bool
-		skip      bool
-		include   bool
-		exclude   bool
-		checks    check.MailChecks
-		wantErr   bool
+		name    string
+		mail    bool
+		whois   bool
+		skip    bool
+		include bool
+		exclude bool
+		checks  check.MailChecks
+		wantErr bool
 	}{
 		{name: "site mode", mail: false, skip: false, checks: check.DefaultMailChecks(), wantErr: false},
 		{name: "mail mode", mail: true, skip: false, checks: check.DefaultMailChecks(), wantErr: false},

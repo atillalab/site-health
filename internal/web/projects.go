@@ -26,7 +26,7 @@ type ProjectsIndex struct {
 	ActiveProject string    `json:"active_project"`
 }
 
-var projectIDRe = regexp.MustCompile(`^[a-z0-9_-]+`)
+var projectIDRe = regexp.MustCompile(`^[a-z0-9_-]+$`)
 
 // projectsIndexPath returns the path to the projects registry file.
 func projectsIndexPath() (string, error) {
@@ -71,7 +71,7 @@ func saveProjectsIndex(idx *ProjectsIndex) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // slugifyName converts a project name to a URL-safe base ID. It transliterates
@@ -134,7 +134,7 @@ func createProject(name string) (*Project, error) {
 	if err := saveProjectsIndex(idx); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Join(projectDir(id), "sessions"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(projectDir(id), "sessions"), 0o700); err != nil {
 		return nil, err
 	}
 	if err := saveDomains(id, []string{}); err != nil {
@@ -243,6 +243,9 @@ func getProject(id string) (*Project, error) {
 // projectDir returns the directory used for a project's data.
 func projectDir(id string) string {
 	dir, _ := dataDir()
+	if !projectIDRe.MatchString(id) {
+		return filepath.Join(dir, "projects", "invalid")
+	}
 	return filepath.Join(dir, "projects", id)
 }
 
@@ -276,14 +279,14 @@ func loadProjectSettings(projectID string) (*ProjectSettings, error) {
 // saveProjectSettings writes a project's settings to disk.
 func saveProjectSettings(projectID string, settings *ProjectSettings) error {
 	path := projectSettingsPath(projectID)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // ensureDefaultProject creates a default project if no projects exist yet.
@@ -311,7 +314,7 @@ func ensureDefaultProject() error {
 				}
 				oldDir := projectDir(oldID)
 				newDir := projectDir(defaultProjectID)
-				if err := os.MkdirAll(filepath.Dir(newDir), 0o755); err != nil {
+				if err := os.MkdirAll(filepath.Dir(newDir), 0o700); err != nil {
 					return err
 				}
 				if err := os.Rename(oldDir, newDir); err != nil {

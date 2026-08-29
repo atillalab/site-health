@@ -6,13 +6,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/atillalab/site-health/internal/check"
-	"github.com/atillalab/site-health/internal/domain"
 )
+
+const (
+	maxRequestBody      = 1 << 20
+	maxDomainsPerCheck  = 50
+	maxConcurrentChecks = 8
+)
+
+var sessionIDRe = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}$`)
 
 //go:embed index.html
 var indexHTML []byte
@@ -32,7 +42,9 @@ func Run(args []string) error {
 		return fmt.Errorf("migration failed: %w", err)
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		setSecurityHeaders(w)
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
@@ -41,22 +53,51 @@ func Run(args []string) error {
 		w.Write(indexHTML)
 	})
 
-	http.HandleFunc("/api/projects", handleProjects)
-	http.HandleFunc("/api/projects/", handleProjectDetail)
-	http.HandleFunc("/api/active-project", handleActiveProject)
+	mux.HandleFunc("/api/projects", handleProjects)
+	mux.HandleFunc("/api/projects/", handleProjectDetail)
+	mux.HandleFunc("/api/active-project", handleActiveProject)
 
 	addr := "localhost:" + port
 	fmt.Printf("Starting site-health web on http://%s\n", addr)
 	fmt.Println("Press Ctrl+C to stop.")
-	return http.ListenAndServe(addr, nil)
+	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 2 * time.Minute, IdleTimeout: 60 * time.Second}
+	return server.ListenAndServe()
+}
+
+func setSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'")
+}
+
+func publicError(error) string { return "internal server error" }
+
+func protectRequest(w http.ResponseWriter, r *http.Request) bool {
+	setSecurityHeaders(w)
+	if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch || r.Method == http.MethodDelete {
+		if origin := r.Header.Get("Origin"); origin != "" {
+			u, err := url.Parse(origin)
+			localOrigin := err == nil && u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1")
+			localHost := r.Host == "" || strings.HasPrefix(r.Host, "localhost") || strings.HasPrefix(r.Host, "127.0.0.1") || strings.HasPrefix(r.Host, "[::1]")
+			if !localOrigin || !localHost {
+				http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+				return false
+			}
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+	}
+	return true
 }
 
 func handleProjects(w http.ResponseWriter, r *http.Request) {
+	if !protectRequest(w, r) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		idx, err := loadProjectsIndex()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, publicError(err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, idx)
@@ -66,6 +107,10 @@ func handleProjects(w http.ResponseWriter, r *http.Request) {
 			Name string `json:"name"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			if _, ok := err.(*http.MaxBytesError); ok {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
@@ -75,7 +120,7 @@ func handleProjects(w http.ResponseWriter, r *http.Request) {
 		}
 		p, err := createProject(req.Name)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, publicError(err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, p)
@@ -86,9 +131,16 @@ func handleProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleProjectDetail(w http.ResponseWriter, r *http.Request) {
+	if !protectRequest(w, r) {
+		return
+	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/projects/")
 	parts := strings.SplitN(rest, "/", 2)
 	projectID := parts[0]
+	if !projectIDRe.MatchString(projectID) {
+		http.Error(w, "invalid project ID", http.StatusBadRequest)
+		return
+	}
 	sub := ""
 	if len(parts) > 1 {
 		sub = parts[1]
@@ -123,7 +175,7 @@ func handleProjectResource(w http.ResponseWriter, r *http.Request, projectID str
 	case http.MethodGet:
 		p, err := getProject(projectID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			http.Error(w, publicError(err), http.StatusNotFound)
 			return
 		}
 		writeJSON(w, p)
@@ -142,14 +194,14 @@ func handleProjectResource(w http.ResponseWriter, r *http.Request, projectID str
 		}
 		p, err := renameProject(projectID, req.Name)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			http.Error(w, publicError(err), http.StatusNotFound)
 			return
 		}
 		writeJSON(w, p)
 
 	case http.MethodDelete:
 		if err := deleteProject(projectID); err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			http.Error(w, publicError(err), http.StatusNotFound)
 			return
 		}
 		writeJSON(w, map[string]any{"ok": true})
@@ -160,11 +212,14 @@ func handleProjectResource(w http.ResponseWriter, r *http.Request, projectID str
 }
 
 func handleActiveProject(w http.ResponseWriter, r *http.Request) {
+	if !protectRequest(w, r) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		p, err := getActiveProject()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, publicError(err), http.StatusInternalServerError)
 			return
 		}
 		if p == nil {
@@ -182,12 +237,12 @@ func handleActiveProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := setActiveProject(req.ID); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, publicError(err), http.StatusBadRequest)
 			return
 		}
 		p, err := getProject(req.ID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, publicError(err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, p)
@@ -198,8 +253,11 @@ func handleActiveProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleProjectDomains(w http.ResponseWriter, r *http.Request, projectID string) {
+	if !protectRequest(w, r) {
+		return
+	}
 	if _, err := getProject(projectID); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, publicError(err), http.StatusNotFound)
 		return
 	}
 
@@ -207,7 +265,7 @@ func handleProjectDomains(w http.ResponseWriter, r *http.Request, projectID stri
 	case http.MethodGet:
 		store, err := loadDomains(projectID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, publicError(err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, store)
@@ -220,14 +278,14 @@ func handleProjectDomains(w http.ResponseWriter, r *http.Request, projectID stri
 		}
 		cleaned := cleanDomains(req.Domains)
 		if err := saveDomains(projectID, cleaned); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, publicError(err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, domainStore{Domains: cleaned})
 
 	case http.MethodDelete:
 		if err := clearDomains(projectID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, publicError(err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, domainStore{Domains: []string{}})
@@ -238,8 +296,11 @@ func handleProjectDomains(w http.ResponseWriter, r *http.Request, projectID stri
 }
 
 func handleProjectSettings(w http.ResponseWriter, r *http.Request, projectID string) {
+	if !protectRequest(w, r) {
+		return
+	}
 	if _, err := getProject(projectID); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, publicError(err), http.StatusNotFound)
 		return
 	}
 
@@ -247,7 +308,7 @@ func handleProjectSettings(w http.ResponseWriter, r *http.Request, projectID str
 	case http.MethodGet:
 		settings, err := loadProjectSettings(projectID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, publicError(err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, settings)
@@ -259,7 +320,7 @@ func handleProjectSettings(w http.ResponseWriter, r *http.Request, projectID str
 			return
 		}
 		if err := saveProjectSettings(projectID, &settings); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, publicError(err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, settings)
@@ -270,8 +331,11 @@ func handleProjectSettings(w http.ResponseWriter, r *http.Request, projectID str
 }
 
 func handleProjectSessions(w http.ResponseWriter, r *http.Request, projectID string) {
+	if !protectRequest(w, r) {
+		return
+	}
 	if _, err := getProject(projectID); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, publicError(err), http.StatusNotFound)
 		return
 	}
 
@@ -279,14 +343,14 @@ func handleProjectSessions(w http.ResponseWriter, r *http.Request, projectID str
 	case http.MethodGet:
 		summaries, err := listSessionSummaries(projectID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, publicError(err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, map[string]any{"sessions": summaries})
 
 	case http.MethodDelete:
 		if err := clearSessions(projectID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, publicError(err), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, map[string]any{"sessions": []SessionSummary{}})
@@ -297,8 +361,11 @@ func handleProjectSessions(w http.ResponseWriter, r *http.Request, projectID str
 }
 
 func handleProjectCheck(w http.ResponseWriter, r *http.Request, projectID string) {
+	if !protectRequest(w, r) {
+		return
+	}
 	if _, err := getProject(projectID); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, publicError(err), http.StatusNotFound)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -315,6 +382,10 @@ func handleProjectCheck(w http.ResponseWriter, r *http.Request, projectID string
 		return
 	}
 	domains := cleanDomains(req.Domains)
+	if err := validateDomainCount(domains); err != nil {
+		http.Error(w, "too many domains", http.StatusRequestEntityTooLarge)
+		return
+	}
 	if len(domains) == 0 {
 		http.Error(w, "no domains to check", http.StatusBadRequest)
 		return
@@ -332,9 +403,23 @@ func handleProjectCheck(w http.ResponseWriter, r *http.Request, projectID string
 	writeJSON(w, resp)
 }
 
+func validateDomainCount(domains []string) error {
+	if len(domains) > maxDomainsPerCheck {
+		return fmt.Errorf("too many domains")
+	}
+	return nil
+}
+
 func handleProjectSession(w http.ResponseWriter, r *http.Request, projectID, sessionID string) {
+	if !protectRequest(w, r) {
+		return
+	}
+	if !sessionIDRe.MatchString(sessionID) {
+		http.Error(w, "invalid session ID", http.StatusBadRequest)
+		return
+	}
 	if _, err := getProject(projectID); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, publicError(err), http.StatusNotFound)
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -347,7 +432,7 @@ func handleProjectSession(w http.ResponseWriter, r *http.Request, projectID, ses
 			http.Error(w, "session not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, publicError(err), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, session)
@@ -360,6 +445,9 @@ func cleanDomains(domains []string) []string {
 	for _, d := range domains {
 		d = strings.TrimSpace(d)
 		if d == "" || seen[d] {
+			continue
+		}
+		if _, err := validateWebDomain(d); err != nil {
 			continue
 		}
 		seen[d] = true
@@ -376,14 +464,21 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 // runChecksForDomains runs site checks for the given domains in parallel and
 // returns a report for each one, preserving the input order.
 func runChecksForDomains(ctx context.Context, domains []string, skipRedirect bool) []*check.Report {
-	var wg sync.WaitGroup
 	results := make([]*check.Report, len(domains))
+	sem := make(chan struct{}, maxConcurrentChecks)
+	var wg sync.WaitGroup
 	for i, d := range domains {
 		wg.Add(1)
 		go func(idx int, raw string) {
 			defer wg.Done()
-			normalized := domain.Normalize(raw)
-			if normalized == "" {
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+			normalized, err := publicWebDomain(raw)
+			if err != nil || normalized == "" {
 				results[idx] = &check.Report{
 					Domain: raw,
 					Mode:   "site",
@@ -400,10 +495,13 @@ func runChecksForDomains(ctx context.Context, domains []string, skipRedirect boo
 				ExpectedHosts: []string{normalized},
 				MailChecks:    check.DefaultMailChecks(),
 				SkipRedirect:  skipRedirect,
+				PublicOnly:    true,
 			}
-			results[idx] = runner.RunChecks(ctx)
+			results[idx] = runDomainCheck(ctx, runner)
 		}(i, d)
 	}
 	wg.Wait()
 	return results
 }
+
+var runDomainCheck = func(ctx context.Context, runner *check.Runner) *check.Report { return runner.RunChecks(ctx) }

@@ -3,6 +3,7 @@ package check
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"regexp"
 	"strings"
@@ -12,6 +13,7 @@ import (
 )
 
 const whoisTimeout = 10 * time.Second
+const maxWhoisResponse = 5 << 20
 
 var whoisServers = map[string]string{
 	"com":  "whois.verisign-grs.com",
@@ -128,7 +130,7 @@ func getAuthoritativeWhoisServer(tld string) (string, error) {
 
 	fmt.Fprintf(conn, "%s\r\n", tld)
 
-	scanner := bufio.NewScanner(conn)
+	scanner := bufio.NewScanner(io.LimitReader(conn, maxWhoisResponse))
 	for scanner.Scan() {
 		line := scanner.Text()
 		if server := ianaWhoisReferral(line); server != "" {
@@ -155,7 +157,7 @@ func queryWhois(server, domain string) (string, error) {
 	fmt.Fprintf(conn, "%s\r\n", domain)
 
 	var sb strings.Builder
-	scanner := bufio.NewScanner(conn)
+	scanner := bufio.NewScanner(io.LimitReader(conn, maxWhoisResponse))
 	for scanner.Scan() {
 		sb.WriteString(scanner.Text())
 		sb.WriteString("\n")

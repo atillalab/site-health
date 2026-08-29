@@ -1,8 +1,31 @@
 package check
 
 import (
+	"errors"
+	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 )
+
+func TestDescribeErrorSanitizesTerminalControlCharacters(t *testing.T) {
+	if strings.ContainsAny(describeError(errors.New("\x1b[31mEVIL\x1b[0m")), "\x1b") {
+		t.Fatal("terminal control sequence was preserved")
+	}
+}
+
+func TestPublicOnlyRedirectPolicy(t *testing.T) {
+	r := &Runner{PublicOnly: true}
+	client := r.httpClient()
+	private, _ := url.Parse("http://127.0.0.1/")
+	if err := client.CheckRedirect(&http.Request{URL: private}, nil); err == nil {
+		t.Fatal("private redirect was allowed")
+	}
+	public, _ := url.Parse("https://example.com/")
+	if err := client.CheckRedirect(&http.Request{URL: public}, nil); err != nil {
+		t.Fatalf("public redirect rejected: %v", err)
+	}
+}
 
 func TestStatusString(t *testing.T) {
 	tests := []struct {

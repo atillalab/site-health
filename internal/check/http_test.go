@@ -5,12 +5,20 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
+func TestReadLimitedBody(t *testing.T) {
+	_, err := readLimitedBody(strings.NewReader(strings.Repeat("x", maxContentBody+1)))
+	if err == nil {
+		t.Fatal("oversized response body was not rejected")
+	}
+}
+
 func TestCheckHTTP_AllOK(t *testing.T) {
 	r := &Runner{
-		Domain:       "example.com",
+		Domain:        "example.com",
 		ExpectedHosts: []string{"example.com"},
 	}
 
@@ -93,7 +101,7 @@ func TestCheckHTTP_MultipleExpectedHosts(t *testing.T) {
 
 func TestCheckHTTP_HTTPSDowngrade(t *testing.T) {
 	r := &Runner{
-		Domain:       "example.com",
+		Domain:        "example.com",
 		ExpectedHosts: []string{"example.com"},
 	}
 
@@ -119,7 +127,7 @@ func TestCheckHTTP_HTTPSDowngrade(t *testing.T) {
 
 func TestCheckHTTP_HTTPSConnectionError(t *testing.T) {
 	r := &Runner{
-		Domain:       "example.com",
+		Domain:        "example.com",
 		ExpectedHosts: []string{"example.com"},
 	}
 
@@ -142,7 +150,7 @@ func TestCheckHTTP_HTTPSConnectionError(t *testing.T) {
 
 func TestCheckHTTP_HTTPToHTTPSExpectedHost(t *testing.T) {
 	r := &Runner{
-		Domain:       "example.com",
+		Domain:        "example.com",
 		ExpectedHosts: []string{"example.com"},
 	}
 
@@ -166,7 +174,7 @@ func TestCheckHTTP_HTTPToHTTPSExpectedHost(t *testing.T) {
 func TestCheckHTTP_Non200OnHTTPS(t *testing.T) {
 	// HTTPS itself is fine (TLS handshake succeeded); the page just returned an error.
 	r := &Runner{
-		Domain:       "example.com",
+		Domain:        "example.com",
 		ExpectedHosts: []string{"example.com"},
 	}
 
@@ -189,7 +197,7 @@ func TestCheckHTTP_Non200OnHTTPS(t *testing.T) {
 
 func TestCheckHTTP_SlowResponseWarning(t *testing.T) {
 	r := &Runner{
-		Domain:       "example.com",
+		Domain:        "example.com",
 		ExpectedHosts: []string{"example.com"},
 	}
 
@@ -215,7 +223,7 @@ func TestCheckHTTP_SlowResponseWarning(t *testing.T) {
 
 func TestCheckHTTP_VerySlowResponseFail(t *testing.T) {
 	r := &Runner{
-		Domain:       "example.com",
+		Domain:        "example.com",
 		ExpectedHosts: []string{"example.com"},
 	}
 
@@ -241,7 +249,7 @@ func TestCheckHTTP_VerySlowResponseFail(t *testing.T) {
 
 func TestCheckHTTP_Subdomain(t *testing.T) {
 	r := &Runner{
-		Domain:       "sub.example.com",
+		Domain:        "sub.example.com",
 		ExpectedHosts: []string{"sub.example.com"},
 	}
 
@@ -269,9 +277,9 @@ func TestCheckHTTP_Subdomain(t *testing.T) {
 
 func TestCheckHTTP_SkipRedirect(t *testing.T) {
 	r := &Runner{
-		Domain:       "example.com",
+		Domain:        "example.com",
 		ExpectedHosts: []string{"example.com"},
-		SkipRedirect: true,
+		SkipRedirect:  true,
 	}
 
 	probe := fixedProbe(map[string]probeResult{
@@ -299,9 +307,9 @@ func TestCheckHTTP_SkipRedirect(t *testing.T) {
 
 func TestCheckHTTP_SkipRedirectIgnoresHTTPError(t *testing.T) {
 	r := &Runner{
-		Domain:       "example.com",
+		Domain:        "example.com",
 		ExpectedHosts: []string{"example.com"},
-		SkipRedirect: true,
+		SkipRedirect:  true,
 	}
 
 	probe := fixedProbe(map[string]probeResult{
@@ -326,9 +334,9 @@ func TestCheckHTTP_SkipRedirectIgnoresHTTPError(t *testing.T) {
 
 func TestCheckHTTP_SkipRedirectStillFailsOnHTTPSDowngrade(t *testing.T) {
 	r := &Runner{
-		Domain:       "example.com",
+		Domain:        "example.com",
 		ExpectedHosts: []string{"example.com"},
-		SkipRedirect: true,
+		SkipRedirect:  true,
 	}
 
 	probe := fixedProbe(map[string]probeResult{
@@ -353,9 +361,9 @@ func TestCheckHTTP_SkipRedirectStillFailsOnHTTPSDowngrade(t *testing.T) {
 
 func TestCheckHTTP_SkipRedirectStillFailsOnHTTPSError(t *testing.T) {
 	r := &Runner{
-		Domain:       "example.com",
+		Domain:        "example.com",
 		ExpectedHosts: []string{"example.com"},
-		SkipRedirect: true,
+		SkipRedirect:  true,
 	}
 
 	probe := fixedProbe(map[string]probeResult{

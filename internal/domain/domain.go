@@ -2,11 +2,60 @@ package domain
 
 import (
 	"errors"
+	"fmt"
+	"net"
 	"net/url"
 	"strings"
+	"unicode"
 )
 
 var ErrInvalidURL = errors.New("invalid URL: missing scheme or host")
+
+// ValidateWebTarget validates the deliberately narrow target syntax accepted
+// by the local web UI. CLI normalization remains permissive for diagnostics.
+func ValidateWebTarget(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) != raw {
+		return "", errors.New("target must not be empty or contain surrounding whitespace")
+	}
+	for _, r := range raw {
+		if unicode.IsControl(r) {
+			return "", errors.New("target contains control characters")
+		}
+	}
+	host := raw
+	if strings.Contains(raw, "://") {
+		u, err := url.Parse(raw)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Port() != "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+			return "", errors.New("target must be a bare hostname or an http(s) URL without credentials, ports, or paths")
+		}
+		host = u.Hostname()
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	if host == "" || strings.ContainsAny(host, "/:@") {
+		return "", errors.New("invalid hostname")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return host, nil
+	}
+	if strings.Contains(host, ":") || strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") {
+		return "", errors.New("invalid hostname")
+	}
+	labels := strings.Split(host, ".")
+	for _, label := range labels {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return "", errors.New("invalid hostname")
+		}
+		for _, r := range label {
+			if !(r == '-' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9') {
+				return "", fmt.Errorf("invalid hostname")
+			}
+		}
+	}
+	if len(host) > 253 {
+		return "", errors.New("hostname is too long")
+	}
+	return host, nil
+}
 
 func Normalize(raw string) string {
 	s := strings.ToLower(raw)

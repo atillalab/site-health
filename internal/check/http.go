@@ -1,8 +1,10 @@
 package check
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -19,23 +21,66 @@ type probeResult struct {
 	Error      error
 }
 
+const maxContentBody = 5 << 20
+
+func readLimitedBody(body io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(body, maxContentBody+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxContentBody {
+		return nil, fmt.Errorf("response body exceeds %d byte limit", maxContentBody)
+	}
+	return data, nil
+}
+
+func (r *Runner) httpClient() *http.Client {
+	transport := &http.Transport{TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second, DisableKeepAlives: true}
+	if r.PublicOnly {
+		transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, err
+			}
+			addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			for _, addr := range addrs {
+				if addr.IP.IsLoopback() || addr.IP.IsPrivate() || addr.IP.IsLinkLocalUnicast() || addr.IP.IsUnspecified() {
+					return nil, fmt.Errorf("blocked private or local address")
+				}
+			}
+			if len(addrs) == 0 {
+				return nil, fmt.Errorf("host did not resolve")
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort(addrs[0].IP.String(), port))
+		}
+	}
+	return &http.Client{Timeout: 15 * time.Second, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("too many redirects")
+		}
+		if r.PublicOnly {
+			if ip := net.ParseIP(req.URL.Hostname()); ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()) {
+				return fmt.Errorf("redirect to private or local address blocked")
+			}
+			if req.URL.Hostname() == "localhost" || strings.HasSuffix(req.URL.Hostname(), ".localhost") {
+				return fmt.Errorf("redirect to private or local address blocked")
+			}
+		}
+		return nil
+	}}
+}
+
 func (r *Runner) probeURL(targetURL string) probeResult {
 	redirectCount := 0
 
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			TLSHandshakeTimeout:   5 * time.Second,
-			ResponseHeaderTimeout: 10 * time.Second,
-			DisableKeepAlives:     true,
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return fmt.Errorf("too many redirects")
-			}
-			redirectCount = len(via)
-			return nil
-		},
+	client := r.httpClient()
+	oldRedirect := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		redirectCount = len(via)
+		return oldRedirect(req, via)
 	}
 
 	start := time.Now()
@@ -151,20 +196,7 @@ type ForwardingProbeResult struct {
 }
 
 func (r *Runner) ProbeURLForForwarding(targetURL string) ForwardingProbeResult {
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			TLSHandshakeTimeout:   5 * time.Second,
-			ResponseHeaderTimeout: 10 * time.Second,
-			DisableKeepAlives:     true,
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return fmt.Errorf("too many redirects")
-			}
-			return nil
-		},
-	}
+	client := r.httpClient()
 
 	resp, err := client.Get(targetURL)
 	if err != nil {
@@ -194,27 +226,23 @@ func describeError(err error) string {
 	case strings.Contains(msg, "EOF"):
 		return "server returned empty response"
 	default:
-		return msg
+		return sanitizeTerminalText(msg)
 	}
+}
+
+func sanitizeTerminalText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' || r >= 0x20 && r != 0x7f {
+			return r
+		}
+		return '\uFFFD'
+	}, s)
 }
 
 func (r *Runner) CheckContent() {
 	r.Verbosef("\n\033[1m== Canonical Page Content ==\033[0m\n")
 
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			TLSHandshakeTimeout:   5 * time.Second,
-			ResponseHeaderTimeout: 10 * time.Second,
-			DisableKeepAlives:     true,
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return fmt.Errorf("too many redirects")
-			}
-			return nil
-		},
-	}
+	client := r.httpClient()
 
 	expectedURL := "https://" + r.ExpectedHosts[0] + "/"
 
@@ -229,7 +257,7 @@ func (r *Runner) CheckContent() {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimitedBody(resp.Body)
 	if err != nil {
 		r.Fail(fmt.Sprintf("%s — error reading response body", expectedURL))
 		return
@@ -392,18 +420,7 @@ func checkParkedPatterns(body string, r *Runner) {
 func (r *Runner) CheckLLMs() {
 	r.Verbosef("\n\033[1m== llms.txt ==\033[0m\n")
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSHandshakeTimeout: 5 * time.Second,
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return fmt.Errorf("too many redirects")
-			}
-			return nil
-		},
-	}
+	client := r.httpClient()
 
 	r.checkLLMsWithClient(client)
 }
